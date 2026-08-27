@@ -18,10 +18,13 @@ pub struct PodmanContainer {
     pub names: Option<Vec<String>>,
     #[serde(default)]
     pub ports: Option<serde_json::Value>,
+    #[serde(default)]
+    pub networks: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct PodmanPort {
     pub host_port: Option<u16>,
     pub container_port: Option<u16>,

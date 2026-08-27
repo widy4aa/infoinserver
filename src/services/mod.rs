@@ -5,3 +5,4 @@ pub mod podman_cli;
 pub mod file_manager;
 pub mod speedtest_cli;
 pub mod nmap_scanner;
+pub mod process_info;

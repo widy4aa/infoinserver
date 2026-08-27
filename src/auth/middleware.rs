@@ -1,6 +1,6 @@
 use axum::{
     extract::Request,
-    http::{header, StatusCode},
+    http::StatusCode,
     middleware::Next,
     response::Response,
     response::IntoResponse,
@@ -8,6 +8,7 @@ use axum::{
 use std::env;
 use axum_auth::AuthBasic;
 
+#[allow(dead_code)]
 pub async fn require_auth(
     auth: Option<AuthBasic>,
     request: Request,
