@@ -44,34 +44,49 @@ sudo apt install iproute2 podman nmap wget ufw
 - `cloudflared` (for Secure Tunnels)
 - `speedtest-cli` (for Network Benchmarks)
 
-## Installation & Setup
+## Deployment Architecture
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository_url>
-   cd infoinserver
-   ```
+This project is built using a **Decoupled Architecture** allowing you to host the Backend (Server Monitor Agent) and the Frontend (Web Dashboard UI) completely separately.
 
-2. **Configure Environment Variables**
-   Ensure the `.env` file exists in the root directory and contains the following configurations:
+### 1. Backend Agent (Rust)
+The backend must run directly on the physical OS (bare-metal) to be able to scan native `/proc` directories, run `ss`, and interact natively with `podman` and `ufw`. 
+It cannot be containerized via Docker effectively without mounting massive amounts of host privileges.
+
+**Running the Backend on Bare-Metal:**
+1. Configure your `.env`:
    ```env
    PORT=8080
-   FILE_ROOT=/home/user/Documents # The directory the file explorer is restricted to
-   AUTH_USER=admin                # For future basic auth implementation
-   AUTH_PASS=admin123             # For future basic auth implementation
-   DB_PATH=sqlite:./data.db       # Path to the SQLite database
+   FILE_ROOT=/home/user/Documents
+   AUTH_USER=admin
+   AUTH_PASS=admin123
+   DB_PATH=sqlite:./data.db
    ```
-
-3. **Run the Application**
+2. Build and start the binary:
    ```bash
-   cargo run --release
+   chmod +x start.sh
+   ./start.sh
    ```
-   The backend will automatically create the `data.db` SQLite file and run the necessary schema migrations upon startup.
+   *(This script runs `cargo build --release` and spawns the backend daemon in the background)*
 
-4. **Access the Dashboard**
-   Open your browser and navigate to: `http://localhost:8080` (or the IP of your server).
+### 2. Frontend UI (Vue.js)
+The Frontend is a standard Single Page Application (Vue.js + Tailwind). It does not need any system privileges and can be hosted anywhere—even on a different continent! You can add multiple Backend Agent IPs into a single Frontend UI.
 
-## Security Notice
+**Running the Frontend via Docker/Podman Compose:**
+If you prefer keeping your web services containerized, you can use the provided `docker-compose.yml` to spin up the UI via Nginx.
+
+1. Ensure Docker or Podman Compose is installed.
+2. Run the deployment:
+   ```bash
+   # Using Docker
+   docker-compose up -d
+
+   # Using Podman
+   podman-compose up -d
+   ```
+3. Open your browser and go to `http://localhost:3000`.
+4. Navigate to the **Settings** tab in the UI to add your Backend Agent's IP address (e.g. `http://<SERVER_IP>:8080`).
+
+---
 
 - This dashboard executes shell commands (`podman`, `nmap`, `speedtest-cli`). While strict input validation and secure argument passing (`Command::new().args()`) are implemented to prevent command injection, **it is highly recommended to NOT expose this dashboard directly to the public internet.**
 - Always run this application behind a Reverse Proxy (like Nginx or Caddy) configured with SSL/TLS and proper HTTP Basic Authentication or an external Auth provider (like Authelia).

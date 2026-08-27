@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  # Deploy UI (Frontend) via Nginx
+  dashboard-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: server-monitor-ui
+    ports:
+      - "3000:80"
+    restart: unless-stopped
