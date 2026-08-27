@@ -2,9 +2,11 @@
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useServerStore } from '../stores/serverStore'
+import { useRouter } from 'vue-router'
 import { Settings, Server, Plus, Trash2, Power, RefreshCw, Edit2 } from 'lucide-vue-next'
 
 const route = useRoute()
+const router = useRouter()
 const { servers, activeServerId, addServer, removeServer, setActiveServer, getActiveServerUrl, updateServerName } = useServerStore()
 
 const newName = ref('')
@@ -24,6 +26,13 @@ const handleRenameServer = () => {
   const newNameStr = prompt("Masukkan nama baru untuk server ini:", currentName)
   if (newNameStr !== null && newNameStr.trim() !== '') {
     updateServerName(route.params.id, newNameStr.trim())
+  }
+}
+
+const handleRemoveServer = () => {
+  if(confirm("Apakah Anda yakin ingin menghapus server ini dari dashboard?")) {
+    removeServer(route.params.id)
+    router.push('/')
   }
 }
 
@@ -59,10 +68,10 @@ const handleReboot = async () => {
       
       <div class="p-5 border border-slate-200 bg-slate-50 rounded-lg">
         <h3 class="text-sm font-semibold mb-3">Add New Backend Node</h3>
-        <div class="flex flex-col sm:flex-row gap-3">
-          <input v-model="newName" type="text" placeholder="Server Name (e.g. VPS Singapore)" class="input-field sm:w-1/3">
-          <input v-model="newUrl" type="text" placeholder="http://<IP>:8080" class="input-field flex-1">
-          <button @click="handleAdd" class="btn-primary px-6"><Plus class="w-4 h-4" /> Add</button>
+        <div class="flex flex-col md:flex-row gap-3">
+          <input v-model="newName" type="text" placeholder="Server Name (e.g. VPS Singapore)" class="input-field md:w-1/3 text-slate-900 placeholder:text-slate-400">
+          <input v-model="newUrl" type="text" placeholder="http://<IP>:8080" class="input-field md:flex-1 w-full text-slate-900 placeholder:text-slate-400">
+          <button @click="handleAdd" class="btn-primary px-6 whitespace-nowrap"><Plus class="w-4 h-4" /> Add Server</button>
         </div>
       </div>
     </section>
@@ -79,6 +88,16 @@ const handleReboot = async () => {
           </div>
           <button @click="handleRenameServer" class="btn-outline text-brand-600 border-brand-200 hover:bg-brand-50 whitespace-nowrap">
             <Edit2 class="w-4 h-4" /> Rename
+          </button>
+        </div>
+
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border border-slate-200 rounded-lg bg-slate-50 gap-4">
+          <div>
+            <div class="font-medium text-slate-800">Remove Server</div>
+            <div class="text-xs text-slate-500">Remove this server from your dashboard list</div>
+          </div>
+          <button @click="handleRemoveServer" class="btn-outline text-red-600 border-red-200 hover:bg-red-50 whitespace-nowrap">
+            <Trash2 class="w-4 h-4" /> Remove
           </button>
         </div>
       </div>
