@@ -13,3 +13,4 @@ pub mod firewall;
 pub mod terminal;
 pub mod terminal_ws;
 pub mod cloudflare;
+pub mod cloudflare_api;

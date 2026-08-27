@@ -17,5 +17,9 @@ pub async fn init_db(db_url: &str) -> Result<SqlitePool, sqlx::Error> {
     let migration_sql = include_str!("migrations.sql");
     sqlx::query(migration_sql).execute(&pool).await?;
 
+    // Tambahan tabel cloudflare
+    let cf_sql = include_str!("migrations_cf.sql");
+    sqlx::query(cf_sql).execute(&pool).await?;
+
     Ok(pool)
 }

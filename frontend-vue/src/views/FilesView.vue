@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useServerStore } from '../stores/serverStore'
+import { useToastStore } from '../stores/toastStore'
 import { FolderTree, DownloadCloud, Upload, ArrowUp, Folder, FileText, Download } from 'lucide-vue-next'
 
 const { getActiveServerUrl } = useServerStore()
+const { showToast } = useToastStore()
 
 const files = ref([])
 const currentPath = ref('/')
@@ -32,8 +34,7 @@ const handleUpload = async (event) => {
   const fileList = event.target.files
   if(!fileList || fileList.length === 0) return
   
-  msg.value = `Uploading ${fileList.length} file(s)...`
-  isError.value = false
+  showToast("Info", `Uploading ${fileList.length} file(s)...`)
   
   const fd = new FormData()
   for(let i=0; i<fileList.length; i++) fd.append('file', fileList[i])
@@ -45,17 +46,15 @@ const handleUpload = async (event) => {
     })
     const data = await res.json()
     if(res.ok) {
-      msg.value = data.message
+      showToast("Success", data.message, "success")
       fetchFiles(currentPath.value)
     } else {
-      throw new Error(data)
+      showToast("Error", data, "error")
     }
   } catch (e) {
-    msg.value = e.message
-    isError.value = true
+    showToast("Error", e.message, "error")
   } finally {
     event.target.value = ''
-    setTimeout(()=>msg.value='', 5000)
   }
 }
 
@@ -63,8 +62,7 @@ const promptFetch = async () => {
   const url = prompt("Masukkan URL file untuk di-fetch (wget):")
   if(!url) return
   
-  msg.value = "Fetching from URL..."
-  isError.value = false
+  showToast("Info", "Fetching from URL...")
   
   try {
     const res = await fetch(`${getActiveServerUrl()}/api/files/fetch`, {
@@ -74,14 +72,13 @@ const promptFetch = async () => {
     })
     const data = await res.json()
     if(res.ok) {
-      msg.value = data.message
+      showToast("Success", data.message, "success")
       fetchFiles(currentPath.value)
-    } else throw new Error(data)
+    } else {
+      showToast("Error", data, "error")
+    }
   } catch(e) {
-    msg.value = e.message
-    isError.value = true
-  } finally {
-    setTimeout(()=>msg.value='', 5000)
+    showToast("Error", e.message, "error")
   }
 }
 
@@ -107,8 +104,6 @@ onMounted(() => fetchFiles('/'))
         </label>
       </div>
     </div>
-    
-    <div v-if="msg" class="text-sm font-medium mb-2" :class="isError ? 'text-red-600' : 'text-green-600'">{{ msg }}</div>
     
     <div class="flex items-center gap-3 mb-4 p-2 bg-slate-50 rounded border border-slate-200 shrink-0">
       <button @click="navigateUp" class="p-1.5 hover:bg-slate-200 rounded text-slate-600" title="Up Directory">

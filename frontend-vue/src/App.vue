@@ -1,18 +1,30 @@
 <script setup>
 import { RouterView } from 'vue-router'
 import { Server, RefreshCw } from 'lucide-vue-next'
+import ToastAlert from './components/ToastAlert.vue'
+import { useToastStore } from './stores/toastStore'
+
+const { showConfirm, showToast } = useToastStore()
 
 const handleUpdate = async () => {
-  if(!confirm("Tindakan ini akan melakukan 'git pull' dan mengompilasi ulang dashboard. Apakah Anda yakin ingin melakukan update?")) return
-  try {
-    // Karena kita sekarang mendukung multi-server, kita update server yang melayani frontend ini.
-    const res = await fetch(`/api/system/update`, {method: 'POST'})
-    const data = await res.json()
-    alert(res.ok ? data.message : data)
-    if (res.ok) setTimeout(() => window.location.reload(), 5000)
-  } catch(e) {
-    alert(e.message)
-  }
+  showConfirm(
+    "Update Dashboard", 
+    "Tindakan ini akan melakukan 'git pull' dan mengompilasi ulang dashboard secara remote. Lanjutkan?",
+    async () => {
+      try {
+        const res = await fetch(`/api/system/update`, {method: 'POST'})
+        const data = await res.json()
+        if (res.ok) {
+          showToast("Success", data.message, "success")
+          setTimeout(() => window.location.reload(), 5000)
+        } else {
+          showToast("Error", data, "error")
+        }
+      } catch(e) {
+        showToast("Error", e.message, "error")
+      }
+    }
+  )
 }
 </script>
 
@@ -41,6 +53,9 @@ const handleUpdate = async () => {
     <main class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <RouterView />
     </main>
+
+    <!-- Global Toast & Confirm Dialog -->
+    <ToastAlert />
   </div>
 </template>
 

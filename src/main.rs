@@ -1,4 +1,4 @@
-use axum::{routing::{get, post}, Router};
+use axum::{routing::{get, post, delete}, Router};
 use std::sync::{Arc, Mutex};
 use sysinfo::{System, Networks};
 use tokio::net::TcpListener;
@@ -92,6 +92,15 @@ async fn main() {
         .route("/api/cloudflare/quick", post(routes::cloudflare::start_quick_tunnel))
         .route("/api/cloudflare/managed", post(routes::cloudflare::start_managed_tunnel))
         .route("/api/cloudflare/stop", post(routes::cloudflare::stop_cloudflare_tunnel))
+        
+        // Cloudflare Zero Trust API Routes
+        .route("/api/cloudflare/api/config", get(routes::cloudflare_api::get_cf_config))
+        .route("/api/cloudflare/api/config", post(routes::cloudflare_api::save_cf_config))
+        .with_state(state.clone())
+        .route("/api/cloudflare/api/routes", get(routes::cloudflare_api::get_tunnel_routes))
+        .route("/api/cloudflare/api/routes", post(routes::cloudflare_api::add_tunnel_route))
+        .route("/api/cloudflare/api/routes", delete(routes::cloudflare_api::delete_tunnel_route))
+        .with_state(state.clone())
 
         // Terminal Route (Legacy Shellinabox)
         .route("/api/terminal/start", post(routes::terminal::start_shellinabox_handler))

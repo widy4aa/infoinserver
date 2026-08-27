@@ -54,7 +54,7 @@ async fn handle_terminal_socket(mut socket: WebSocket) {
     let mut tokio_pty_reader = tokio::task::spawn_blocking(move || {
         let mut std_reader = pty_reader;
         let mut buffer = [0u8; 1024];
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
         
         std::thread::spawn(move || {
             loop {

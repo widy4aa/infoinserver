@@ -3,7 +3,10 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useServerStore } from '../stores/serverStore'
 import { Network, Radar, ShieldCheck } from 'lucide-vue-next'
 
+import { useToastStore } from '../stores/toastStore'
+
 const { getActiveServerUrl } = useServerStore()
+const { showToast, showConfirm } = useToastStore()
 
 const networkInterfaces = ref([])
 const listeningPorts = ref([])
@@ -64,20 +67,21 @@ const extractPid = (processStr) => {
   return match ? match[1] : null;
 }
 
-const killPortProcess = async (pid) => {
-  if (!confirm(`Are you sure you want to FORCE KILL process PID ${pid}?`)) return
-  try {
-    const res = await fetch(`${getActiveServerUrl()}/api/process/kill/${pid}`, { method: 'POST' })
-    const result = await res.json()
-    if(res.ok) {
-      alert(result.message)
-      fetchPorts()
-    } else {
-      alert(`Error: ${result}`)
+const killPortProcess = (pid) => {
+  showConfirm("Konfirmasi", `Are you sure you want to FORCE KILL process PID ${pid}?`, async () => {
+    try {
+      const res = await fetch(`${getActiveServerUrl()}/api/process/kill/${pid}`, { method: 'POST' })
+      const result = await res.json()
+      if(res.ok) {
+        showToast("Success", result.message, "success")
+        fetchPorts()
+      } else {
+        showToast("Error", `Error: ${result}`, "error")
+      }
+    } catch(e) {
+      showToast("Error", "Failed to kill process.", "error")
     }
-  } catch(e) {
-    alert("Failed to kill process.")
-  }
+  })
 }
 
 const pollScan = async () => {

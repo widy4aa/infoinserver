@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useServerStore } from '../stores/serverStore'
+import { useToastStore } from '../stores/toastStore'
 import { Cloud, CheckCircle2, XCircle, Play, Square, Loader2, DownloadCloud } from 'lucide-vue-next'
 
 const { getActiveServerUrl } = useServerStore()
+const { showConfirm, showToast } = useToastStore()
 
 const status = ref(null)
 const isLoading = ref(true)
@@ -28,7 +30,6 @@ const fetchStatus = async () => {
 }
 
 const handleAction = async (endpoint, payload = null) => {
-  actionMsg.value = 'Processing...'
   try {
     const res = await fetch(`${getActiveServerUrl()}/api/cloudflare/${endpoint}`, {
       method: 'POST',
@@ -39,16 +40,18 @@ const handleAction = async (endpoint, payload = null) => {
     const data = await res.json()
     
     if (res.ok) {
-      actionMsg.value = data.message
+      showToast("Success", data.message, "success")
       fetchStatus()
     } else {
-      actionMsg.value = `Error: ${data}`
+      showToast("Error", `Error: ${data}`, "error")
     }
   } catch (e) {
-    actionMsg.value = `Failed: ${e.message}`
+    showToast("Error", `Failed: ${e.message}`, "error")
   }
-  
-  setTimeout(() => actionMsg.value = '', 5000)
+}
+
+const confirmStopTunnel = () => {
+  showConfirm("Konfirmasi", "Hentikan tunnel cloudflared yang sedang berjalan?", () => handleAction('stop'))
 }
 
 onMounted(() => {
@@ -89,12 +92,10 @@ onUnmounted(() => {
         <button v-if="!status.installed" @click="handleAction('install')" class="btn-primary">
           <DownloadCloud class="w-4 h-4" /> Install Cloudflared
         </button>
-        <button v-if="status.running" @click="handleAction('stop')" class="btn-destructive">
+        <button v-if="status.running" @click="confirmStopTunnel" class="btn-destructive">
           <Square class="w-4 h-4" /> Stop Tunnel
         </button>
       </div>
-
-      <div v-if="actionMsg" class="text-sm font-medium text-brand-600">{{ actionMsg }}</div>
 
       <!-- Controls (Only show if installed) -->
       <div v-if="status.installed" class="grid grid-cols-1 lg:grid-cols-2 gap-4">

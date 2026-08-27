@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useServerStore } from '../stores/serverStore'
+import { useToastStore } from '../stores/toastStore'
 import { Cpu, Loader2 } from 'lucide-vue-next'
 
 const { getActiveServerUrl } = useServerStore()
+const { showConfirm, showToast } = useToastStore()
 
 const sysInfo = ref(null)
 const processes = ref([])
@@ -31,12 +33,20 @@ const fetchProcesses = async () => {
   }
 }
 
-const killProcess = async (pid) => {
-  if(!confirm(`Kill process PID ${pid}?`)) return
-  try {
-    const res = await fetch(`${getActiveServerUrl()}/api/process/kill/${pid}`, { method: 'POST' })
-    if(res.ok) fetchProcesses()
-  } catch(e) {}
+const killProcess = (pid) => {
+  showConfirm("Konfirmasi", `Kill process PID ${pid}?`, async () => {
+    try {
+      const res = await fetch(`${getActiveServerUrl()}/api/process/kill/${pid}`, { method: 'POST' })
+      if(res.ok) {
+        fetchProcesses()
+        showToast("Success", `Process ${pid} killed`, "success")
+      } else {
+        showToast("Error", "Failed to kill process", "error")
+      }
+    } catch(e) {
+      showToast("Error", e.message, "error")
+    }
+  })
 }
 
 const formatUptime = (seconds) => {

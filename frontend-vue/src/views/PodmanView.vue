@@ -2,8 +2,10 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useServerStore } from '../stores/serverStore'
 import { Box, Play, Square, RefreshCw, Trash2, FileText } from 'lucide-vue-next'
+import { useToastStore } from '../stores/toastStore'
 
 const { getActiveServerUrl } = useServerStore()
+const { showConfirm, showToast } = useToastStore()
 const containers = ref([])
 const msg = ref('')
 const isError = ref(false)
@@ -22,12 +24,27 @@ const fetchContainers = async () => {
   } catch (e) {}
 }
 
-const performAction = async (action, id) => {
-  if (action === 'rm' && !confirm(`Hapus container ${id}?`)) return
+const executeAction = async (action, id) => {
   try {
     const res = await fetch(`${getActiveServerUrl()}/api/podman/containers/${action}/${id}`, { method: 'POST' })
-    fetchContainers()
-  } catch (e) {}
+    const data = await res.json()
+    if (res.ok) {
+      showToast("Success", data.message || `Container ${action} successful`, "success")
+      fetchContainers()
+    } else {
+      showToast("Error", data || `Failed to ${action} container`, "error")
+    }
+  } catch (e) {
+    showToast("Error", e.message, "error")
+  }
+}
+
+const performAction = (action, id) => {
+  if (action === 'rm') {
+    showConfirm("Konfirmasi Hapus", `Hapus container ${id}?`, () => executeAction(action, id))
+  } else {
+    executeAction(action, id)
+  }
 }
 
 const createContainer = async () => {
