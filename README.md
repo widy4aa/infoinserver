@@ -18,14 +18,31 @@ A lightweight, single-binary server monitoring dashboard written in **Rust** (us
 - **Backend**: Rust, Axum, Tokio, Sqlx (SQLite), Sysinfo.
 - **Frontend**: Vanilla HTML/JS/CSS (No heavy frameworks, No WebSockets required).
 
+## OS Support
+
+This dashboard is designed specifically for **Linux** environments due to its tight integration with Linux-native tools and the `/proc` filesystem. 
+- **Fully Supported & Tested**: Arch Linux, CachyOS, Manjaro, Ubuntu, Debian.
+- **Unsupported**: Windows (Native), macOS (Some features like `ss` or UFW will not work).
+
 ## Prerequisites
 
-Before running the application, ensure your host machine has the following installed (depending on the features you want to use):
-- `rust` and `cargo` (for building the app)
-- `ss` (usually part of `iproute2` on Linux, used for fast port monitoring)
-- `podman` (for container management features)
-- `nmap` (for Deep Scan features)
-- `speedtest-cli` (for network speed tests)
+Before running the application, ensure your host machine has the following packages installed (depending on the features you want to use):
+
+```bash
+# Arch Linux / CachyOS / Manjaro
+sudo pacman -S rustup
+rustup default stable
+sudo pacman -S iproute2 podman nmap wget ufw
+
+# Ubuntu / Debian
+sudo apt install curl build-essential
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+sudo apt install iproute2 podman nmap wget ufw
+```
+
+**Optional but Recommended (Auto-Installer supported by Dashboard):**
+- `cloudflared` (for Secure Tunnels)
+- `speedtest-cli` (for Network Benchmarks)
 
 ## Installation & Setup
 
