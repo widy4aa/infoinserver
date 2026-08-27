@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useServerStore } from '../stores/serverStore'
-import { Server, Plus, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Trash2 } from 'lucide-vue-next'
+import { Server, Plus, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Trash2, Cloud } from 'lucide-vue-next'
 
 const { servers, removeServer } = useServerStore()
 const serverHostnames = ref({})
@@ -58,12 +58,15 @@ onMounted(() => {
         </RouterLink>
 
         <!-- Footer Menu (Quick Links) -->
-        <div class="p-2 border-t border-slate-100 bg-white grid grid-cols-4 divide-x divide-slate-100">
+        <div class="p-2 border-t border-slate-100 bg-white grid grid-cols-5 divide-x divide-slate-100">
           <RouterLink :to="`/server/${s.id}/ports`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Ports & Scan">
             <ShieldCheck class="w-4 h-4" />
           </RouterLink>
           <RouterLink :to="`/server/${s.id}/podman`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Podman">
             <Box class="w-4 h-4" />
+          </RouterLink>
+          <RouterLink :to="`/server/${s.id}/cloudflare`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Cloudflare">
+            <Cloud class="w-4 h-4" />
           </RouterLink>
           <RouterLink :to="`/server/${s.id}/files`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="File Explorer">
             <FolderTree class="w-4 h-4" />

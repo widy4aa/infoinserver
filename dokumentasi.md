@@ -1,45 +1,44 @@
 # Dokumentasi Internal (Untuk AI Agent & Developer)
 
-Dokumen ini ditujukan bagi AI Agent atau Developer yang akan memelihara, membaca, atau melanjutkan pengembangan proyek **Server Monitoring Dashboard**. Proyek ini adalah aplikasi *single-binary* berbasis Rust yang menyajikan dashboard *monitoring* server murni lewat HTTP Polling (tanpa WebSocket).
+Dokumen ini ditujukan bagi AI Agent atau Developer yang akan memelihara, membaca, atau melanjutkan pengembangan proyek **Server Monitoring Dashboard**. Proyek ini adalah aplikasi pemantauan dengan arsitektur *Decoupled* (Backend API dan Frontend SPA terpisah secara logika).
 
 ## 1. Arsitektur Utama
-- **Backend Framework**: `axum` (dibangun di atas `tokio` dan `hyper`).
-- **Database**: SQLite via `sqlx` (asynchronous, pure Rust).
-- **Frontend**: HTML5, Vanilla JavaScript (ES6+), dan CSS3. Disajikan statis melalui `tower_http::services::ServeDir`.
-- **Paradigma Komunikasi**: Frontend menggunakan `fetch()` API dengan interval `setInterval()` untuk melakukan *polling* data ke endpoint `/api/*`. Tidak ada WebSocket/SSE demi kesederhanaan *deployment* dan efisiensi memori.
+- **Backend Framework**: `axum` (berbasis `tokio` dan `hyper`). Menggunakan port `8080`.
+- **Database Backend**: SQLite via `sqlx` (asynchronous, pure Rust).
+- **Frontend Framework**: Vue.js 3, Vite, Tailwind CSS 4, dan Lucide Icons.
+- **Terminal Web**: Menggunakan `portable-pty` di sisi backend (Rust) dan `xterm.js` di sisi frontend (Vue) yang saling berkomunikasi menggunakan protokol `WebSockets`.
+- **Paradigma Komunikasi**: Frontend Vue berkomunikasi dengan backend Rust menggunakan API HTTP standar (`fetch`) dan memanfaatkan `localStorage` browser untuk menyimpan daftar IP Backend Server secara statis.
 
 ## 2. Struktur Direktori dan File
 ```text
 .
-├── Cargo.toml          # Dependensi Rust (axum, tokio, sqlx, sysinfo, dll)
+├── Cargo.toml          # Dependensi Rust (axum, tokio, sqlx, sysinfo, reqwest, dll)
 ├── .env                # Konfigurasi environment (PORT, FILE_ROOT, DB_PATH)
+├── start.sh            # Script utilitas build & run backend ke background
+├── docker-compose.yml  # Deployment frontend terisolasi (Nginx Alpine)
+├── Dockerfile.frontend # Multi-stage build Vite -> Nginx
 ├── src/
-│   ├── main.rs         # Entry point, inisialisasi state, dan definisi Axum Router
+│   ├── main.rs         # Entry point, inisialisasi state, CORS, & Axum Router
 │   ├── routes/         # Layer HTTP Handlers (Menerima request, membalas JSON)
-│   │   ├── system.rs   # Handler /api/system
-│   │   ├── network.rs  # Handler /api/network
-│   │   ├── ports.rs    # Handler /api/ports & /api/ports/scan
-│   │   ├── files.rs    # Handler /api/files/*
-│   │   ├── speedtest.rs# Handler /api/speedtest/*
-│   │   └── podman*.rs  # Handler /api/podman/*
-│   ├── services/       # Layer Bisnis Logik & Interaksi OS / Subprocess
-│   │   ├── system_info.rs # Wrapper crate `sysinfo`
-│   │   ├── port_scanner.rs# Parsing `ss -tulnp`
-│   │   ├── nmap_scanner.rs# Spawn subprocess `nmap`
-│   │   ├── podman_cli.rs  # Spawn subprocess `podman`
-│   │   ├── speedtest_cli.rs# Spawn subprocess `speedtest-cli`
-│   │   └── file_manager.rs# Navigasi filesystem ter-sandbox
-│   ├── background/
-│   │   └── scheduler.rs# Task tokio::spawn interval (misal: speedtest per jam)
-│   ├── db/
-│   │   ├── migrations.sql # Skema SQLite awal
-│   │   └── mod.rs      # Koneksi pool Sqlx
-│   └── auth/
-│       └── middleware.rs  # (Disiapkan) Basic Auth middleware (dimatikan di root)
-└── static/             # Frontend statis
-    ├── index.html      # UI Dashboard utama
-    ├── css/style.css
-    └── js/             # Skrip JS terpisah per modul (system.js, ports.js, dll)
+│   │   ├── system.rs       # OS Info
+│   │   ├── system_mgmt.rs  # Git Pull (Update) & Reboot Server
+│   │   ├── firewall.rs     # Manipulasi UFW rules
+│   │   ├── cloudflare.rs   # Manajemen daemon cloudflared
+│   │   ├── cloudflare_api.rs # Integrasi Cloudflare Zero Trust (Ingress Routes)
+│   │   ├── files.rs        # Download, Upload (Multipart), Fetch URL (wget)
+│   │   ├── process_mgmt.rs # Top CPU Process & Kill task
+│   │   ├── terminal_ws.rs  # PTY WebSocket handler
+│   │   └── podman_*.rs     # Manajemen Container & Modal Logs
+│   ├── services/       # Layer Bisnis Logik & OS Wrapper
+│   │   └── ...         # Berbagai fungsi parser & command execution
+│   └── background/     # Scheduler berjalan di tokio::spawn
+└── frontend-vue/       # Folder source code Vue 3 (Vite)
+    ├── vite.config.js  # Konfigurasi output build Vue ke direktori ../static
+    └── src/
+        ├── App.vue             # Entry point Vue & Modal Terminal Global
+        ├── views/              # Halaman: Home, Dashboard, Podman, Cloudflare, dll
+        ├── components/         # Reusable UI (ToastAlert, NativeTerminal, dll)
+        └── stores/             # State Management lokal (serverStore.js, toastStore.js)
 ```
 
 ## 3. Catatan Keamanan Penting (Security Context)
@@ -48,22 +47,20 @@ Saat mengembangkan lebih lanjut, aturan berikut **WAJIB** dipatuhi:
 
 1. **Subprocess (Command Injection Prevention)**:
    - JANGAN PERNAH menggunakan `sh -c` yang digabung (*concatenate*) dengan string input dari user.
-   - Gunakan `std::process::Command` dengan meneruskan parameter lewat pemanggilan `.args()` secara terpisah. Contoh yang benar ada di `src/services/podman_cli.rs` (validasi regex/alfanumerik) dan `src/routes/podman_create.rs`.
+   - Gunakan `std::process::Command` dengan meneruskan parameter lewat pemanggilan `.args()` secara terpisah. Pengecualian hanya untuk perintah sederhana tanpa variabel dinamis atau yang sudah tervalidasi secara *hardcoded regex*.
 2. **File Explorer (Path Traversal Protection)**:
-   - Modul `file_manager.rs` menggunakan `canonicalize()` dan mengecek apakah target path berawal dari `FILE_ROOT` yang dikonfigurasi di `.env`. 
-   - Jangan pernah by-pass fungsi `resolve_and_validate_path()` saat membaca atau memanipulasi file agar user tidak bisa membaca `/etc/passwd` atau root direktori.
-3. **Middleware Authentication**:
-   - Terdapat benturan *type trait* pada `axum::Router` jika `axum::middleware::from_fn` diimplementasikan secara global (menggunakan `.layer()` atau `.route_layer()`) yang mencakup rute `ServeDir` fallback. Untuk mengaktifkan kembali Basic Auth di masa depan, pertimbangkan untuk membungkus keseluruhan `app` menggunakan `tower::ServiceBuilder` yang kompatibel, atau implementasikan *auth middleware* per-route/grup.
+   - Modul `files.rs` menggunakan fungsi `resolve_and_validate_path()` yang melakukan `canonicalize()` lalu mengecek apakah target path berawal dari `FILE_ROOT` `.env`. Jangan pernah mem- *bypass* ini.
+3. **CORS & Autentikasi**:
+   - Backend mem- *bypass* CORS (`Any`) agar frontend Vue dari mesin lain bisa terhubung. Jangan *expose* port Backend ke publik (`0.0.0.0`) tanpa menggunakan VPN atau Reverse Proxy seperti Nginx/Caddy (TLS & Basic Auth) pada tahap *production*.
 
 ## 4. Cara Kerja Fitur Spesifik
 
-- **Podman**: Menggunakan perintah `podman ps -a --format json` untuk membaca kontainer. Ini mengharuskan host OS menginstal Podman.
-- **Port Scanner**:
-  - *Quick Scan*: Mengambil data secara pasif dari output `ss -tulnp`.
-  - *Deep Scan (Nmap)*: Men-spawn background task `nmap -p 1-1000 -T4 <target>`. Endpoint mereturn ID Job (`uuid` diganti dengan Auto-increment SQLite ID `job_id`), lalu frontend melakukan *polling* setiap 2 detik ke `/api/ports/scan/{id}` untuk menunggu status `done`.
-- **Speedtest**: Menggunakan `speedtest-cli --json`. Secara default dijalankan 1 jam sekali oleh `tokio::time::interval` di `src/background/scheduler.rs`.
+- **Terminal**: Backend merentangkan (spawn) `/bin/bash` ke dalam virtual PTY (`portable-pty`). Input dari WebSocket `xterm.js` ditulis langsung ke *stdin* PTY, sementara output PTY dikirim per *byte* kembali ke WebSocket secara sinkron.
+- **Top Processes**: Memanfaatkan `sysinfo` untuk mengambil 50 list proses terberat (berdasarkan CPU).
+- **Cloudflare API**: Pengguna menyimpan Token Cloudflare. Dashboard akan menarik seluruh Ingress Rules dari *Cloudflare Zero Trust API* dan dapat menyisipkan sub-domain (seperti `test.domain.com`) untuk merouting lokal port (`127.0.0.1:8080`) secara otomatis.
+- **File Upload/Fetch**: Menggunakan *Multipart streaming* agar efisien dalam RAM. Fitur *Fetch* mengeksekusi `wget -nc <url>` dari direktori saat itu.
 
-## 5. Pengembangan Lanjutan (TODO)
-- Pemasangan Caddy/Nginx reverse proxy untuk menyediakan akses HTTPS (TLS).
-- Menghidupkan Auth Middleware yang solid.
-- Penambahan fungsi *File Upload* dan *Delete* (Backend routing sudah disiapkan ruangnya, tapi fungsinya belum ditambahkan demi menjaga keamanan di fase prototipe).
+## 5. Deployment Flow
+1. Vue `npm run build-only` mengekspor JS/CSS/HTML ke folder `/static` induk.
+2. Backend Rust `cargo build --release` mengompilasi binary dan siap berjalan mem- *serve* port 8080 API beserta fallback `/static`.
+3. Alternatif lain: Backend berjalan di *host* fisik (untuk kemudahan `sudo`, `nmap`, dsb) sementara Frontend dilayani oleh kontainer Nginx (`docker-compose.yml`) port 3000.
