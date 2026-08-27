@@ -1,0 +1,27 @@
+warning: unused import: `header`
+ --> src/auth/middleware.rs:3:12
+  |
+3 |     http::{header, StatusCode},
+  |            ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `PodmanPort` is never constructed
+  --> src/services/podman_cli.rs:25:12
+   |
+25 | pub struct PodmanPort {
+   |            ^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `require_auth` is never used
+  --> src/auth/middleware.rs:11:14
+   |
+11 | pub async fn require_auth(
+   |              ^^^^^^^^^^^^
+
+warning: `infoinserver` (bin "infoinserver") generated 3 warnings (run `cargo fix --bin "infoinserver" -p infoinserver` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.57s
+     Running `target/debug/infoinserver`
+Server running on http://127.0.0.1:8080
+Scheduler: Running scheduled speedtest...

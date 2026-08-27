@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Monitoring Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem;">
+        <h1 style="margin: 0;">Server Monitoring Dashboard</h1>
+        <a href="http://localhost:7681" target="_blank" rel="noopener" style="background: #e74c3c; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Buka Terminal
+        </a>
+    </header>
+    <main>
+        <section id="system-info" class="card">
+            <h2>System Info</h2>
+            <div id="system-loading">Loading...</div>
+            <div id="system-data" style="display: none;">
+                <p><strong>Hostname:</strong> <span id="sys-hostname"></span></p>
+                <p><strong>OS:</strong> <span id="sys-os"></span></p>
+                <p><strong>Kernel:</strong> <span id="sys-kernel"></span></p>
+                <p><strong>Uptime:</strong> <span id="sys-uptime"></span></p>
+                <p><strong>CPU Cores:</strong> <span id="sys-cpu-cores"></span></p>
+                <p><strong>Global CPU Usage:</strong> <span id="sys-cpu-usage"></span>%</p>
+                <p><strong>RAM:</strong> <span id="sys-ram"></span></p>
+            </div>
+        </section>
+
+        <section id="network-info" class="card">
+            <h2>Network Interfaces</h2>
+            <div id="network-loading">Loading...</div>
+            <div id="network-data" style="display: none;">
+                <table style="width:100%; text-align:left; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #ccc;">
+                            <th>Name</th>
+                            <th>MAC Address</th>
+                            <th>IPs</th>
+                            <th>RX (Bytes)</th>
+                            <th>TX (Bytes)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="network-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="ports-info" class="card">
+            <h2>Listening Ports</h2>
+            
+            <div style="margin-bottom: 1rem; background: #e8f4f8; padding: 1rem; border-radius: 4px;">
+                <h3 style="margin-top: 0; font-size: 1.1em;">Deep Scan (Nmap)</h3>
+                <input type="text" id="scan-target" placeholder="IP / localhost" value="localhost" style="padding: 5px;">
+                <button onclick="startDeepScan()">Run Deep Scan</button>
+                <div id="scan-status" style="margin-top: 10px; font-weight: bold;"></div>
+                <pre id="scan-result" style="background: #333; color: #fff; padding: 10px; display: none; overflow-x: auto; font-size: 0.9em;"></pre>
+            </div>
+
+            <div id="ports-loading">Loading...</div>
+            <div id="ports-data" style="display: none;">
+                <table style="width:100%; text-align:left; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #ccc;">
+                            <th>Protocol</th>
+                            <th>Local Address</th>
+                            <th>State</th>
+                            <th>Process</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ports-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section id="podman-info" class="card">
+            <h2>Podman Containers</h2>
+            
+            <div style="margin-bottom: 1rem; background: #e8f4f8; padding: 1rem; border-radius: 4px;">
+                <h3 style="margin-top: 0; font-size: 1.1em;">Create New Container</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <input type="text" id="create-c-name" placeholder="Container Name (e.g. my-nginx)" style="padding: 5px;">
+                    <input type="text" id="create-c-image" placeholder="Image (e.g. nginx:latest)" style="padding: 5px;">
+                    <input type="text" id="create-c-ports" placeholder="Ports (e.g. 8080:80)" style="padding: 5px;">
+                    <button onclick="createNewContainer()" style="background: #27ae60; color: white;">Run Container</button>
+                </div>
+                <div id="create-c-status" style="margin-top: 10px; font-weight: bold;"></div>
+            </div>
+
+            <div id="podman-loading">Loading...</div>
+            <div id="podman-data" style="display: none;">
+                <table style="width:100%; text-align:left; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #ccc;">
+                            <th>Name</th>
+                            <th>Image</th>
+                            <th>State</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="podman-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section id="files-info" class="card">
+            <h2>File Explorer</h2>
+            <div style="margin-bottom: 1rem;">
+                <strong>Current Path: </strong>
+                <span id="files-current-path" style="font-family: monospace;">/</span>
+                <button onclick="navigateUp()" style="margin-left: 10px;">⬆ Up Directory</button>
+            </div>
+            <div id="files-loading">Loading...</div>
+            <div id="files-data" style="display: none;">
+                <table style="width:100%; text-align:left; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #ccc;">
+                            <th>Type</th>
+                            <th>Name</th>
+                            <th>Size</th>
+                            <th>Last Modified</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="files-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section id="speedtest-info" class="card">
+            <h2>Speedtest</h2>
+            <div style="margin-bottom: 1rem;">
+                <button id="btn-run-speedtest" onclick="runSpeedtest()">Run Speedtest Now</button>
+                <span id="speedtest-status" style="margin-left: 10px; font-style: italic;"></span>
+            </div>
+            <div id="speedtest-loading">Loading history...</div>
+            <div id="speedtest-data" style="display: none;">
+                <table style="width:100%; text-align:left; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid #ccc;">
+                            <th>Date</th>
+                            <th>Download (Mbps)</th>
+                            <th>Upload (Mbps)</th>
+                            <th>Ping (ms)</th>
+                            <th>Server</th>
+                        </tr>
+                    </thead>
+                    <tbody id="speedtest-tbody">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+    <script src="/js/system.js"></script>
+    <script src="/js/network.js"></script>
+    <script src="/js/ports.js"></script>
+    <script src="/js/podman.js"></script>
+    <script src="/js/files.js"></script>
+    <script src="/js/speedtest.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
