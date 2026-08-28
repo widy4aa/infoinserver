@@ -1,196 +1,592 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
-import { Cloud, Save, Route, Plus, Trash2, Loader2, KeyRound } from 'lucide-vue-next'
+import {
+  Cloud, CheckCircle2, XCircle, Loader2, Plus, Trash2,
+  RefreshCw, Terminal, KeyRound, ExternalLink, ShieldCheck,
+  AlertTriangle, DownloadCloud, ChevronRight, Copy
+} from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
 
-const config = ref({ account_id: '', tunnel_id: '', api_token: '' })
-const isLoadingConfig = ref(true)
+// ── Status ──────────────────────────────────────────────────
+const status = ref(null)
+const isLoadingStatus = ref(true)
 
-const routes = ref([])
-const isLoadingRoutes = ref(false)
+// ── Config (ingress routes) ──────────────────────────────────
+const localConfig = ref(null)
+const isLoadingConfig = ref(false)
 
+// ── Add route form ───────────────────────────────────────────
 const newHostname = ref('')
-const newService = ref('')
+const newService = ref('http://127.0.0.1:')
+const isAddingRoute = ref(false)
+
+// ── Login flow ───────────────────────────────────────────────
+const loginUrl = ref(null)
+const isStartingLogin = ref(false)
+const isPollingLogin = ref(false)
+let loginPollTimer = null
+
+// ── Create tunnel form ───────────────────────────────────────
+const newTunnelName = ref('')
+const isCreatingTunnel = ref(false)
+const createTunnelResult = ref(null)
+
+// ── Action states ────────────────────────────────────────────
+const isRestarting = ref(false)
+const isInstalling = ref(false)
+
+// ── Computed helpers ─────────────────────────────────────────
+const isFullySetup = computed(() =>
+  status.value?.installed &&
+  status.value?.auth_cert_exists &&
+  status.value?.config_exists
+)
+
+const routes = computed(() =>
+  localConfig.value?.ingress?.filter(r => r.hostname) ?? []
+)
+
+// ── Fetch status ─────────────────────────────────────────────
+const fetchStatus = async () => {
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/status`)
+    if (res.ok) {
+      status.value = await res.json()
+      // Jika sudah setup, ambil config
+      if (status.value?.config_exists && !localConfig.value) {
+        await fetchConfig()
+      }
+    }
+  } catch (e) {
+    console.error(e)
+  } finally {
+    isLoadingStatus.value = false
+  }
+}
 
 const fetchConfig = async () => {
+  isLoadingConfig.value = true
   try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/config`)
-    if(res.ok) {
-      const data = await res.json()
-      if(data) config.value = data
-    }
-  } catch(e) {}
-  isLoadingConfig.value = false
-}
-
-const saveConfig = async () => {
-  try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/config`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config.value)
-    })
-    const data = await res.json()
-    if(res.ok) showToast("Success", data.message, "success")
-    else showToast("Error", data, "error")
-  } catch(e) {
-    showToast("Error", e.message, "error")
-  }
-}
-
-const fetchRoutes = async () => {
-  if (!config.value.account_id || !config.value.tunnel_id || !config.value.api_token) return
-  isLoadingRoutes.value = true
-  try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/routes`)
-    const data = await res.json()
-    if(res.ok) {
-      const ingress = data?.result?.config?.ingress || []
-      // filter out catch-all
-      routes.value = ingress.filter(r => r.service !== 'http_status:404')
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/config`)
+    if (res.ok) {
+      localConfig.value = await res.json()
     } else {
-      showToast("Cloudflare API Error", JSON.stringify(data), "error")
+      const err = await res.text()
+      showToast('Error', err, 'error')
     }
-  } catch(e) {
-    showToast("Error", "Failed to fetch routes: " + e.message, "error")
+  } catch (e) {
+    showToast('Error', e.message, 'error')
   } finally {
-    isLoadingRoutes.value = false
+    isLoadingConfig.value = false
   }
 }
 
-const addRoute = async () => {
-  if(!newHostname.value || !newService.value) {
-    showToast("Warning", "Hostname and Service must be filled", "warning")
+// ── Install ──────────────────────────────────────────────────
+const installCloudflared = async () => {
+  isInstalling.value = true
+  showToast('Info', 'Downloading and installing cloudflared...')
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/install`, { method: 'POST' })
+    const data = await res.json()
+    if (res.ok) {
+      showToast('Success', data.message, 'success')
+      await fetchStatus()
+    } else {
+      showToast('Error', data, 'error')
+    }
+  } catch (e) {
+    showToast('Error', e.message, 'error')
+  } finally {
+    isInstalling.value = false
+  }
+}
+
+// ── Create Tunnel ────────────────────────────────────────────
+const createTunnel = async () => {
+  if (!newTunnelName.value.trim()) {
+    showToast('Warning', 'Tunnel name cannot be empty', 'warning')
     return
   }
-  
-  showToast("Info", "Creating route in Cloudflare...")
+  isCreatingTunnel.value = true
+  createTunnelResult.value = null
   try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/routes`, {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hostname: newHostname.value, service: newService.value })
+      body: JSON.stringify({ name: newTunnelName.value.trim() })
     })
     const data = await res.json()
-    if(res.ok) {
-      showToast("Success", data.message, "success")
-      newHostname.value = ''
-      newService.value = ''
-      fetchRoutes()
+    if (res.ok) {
+      createTunnelResult.value = data
+      showToast('Success', data.message, 'success')
+      await fetchStatus()
     } else {
-      showToast("Error", data, "error")
+      showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
     }
-  } catch(e) {
-    showToast("Error", e.message, "error")
+  } catch (e) {
+    showToast('Error', e.message, 'error')
+  } finally {
+    isCreatingTunnel.value = false
+  }
+}
+
+// ── Login / Auth ─────────────────────────────────────────────
+const startLogin = async () => {
+  isStartingLogin.value = true
+  loginUrl.value = null
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/login`, { method: 'POST' })
+    const data = await res.json()
+    if (res.ok) {
+      loginUrl.value = data.url
+      showToast('Info', data.message)
+      // Mulai polling cert.pem
+      startPollingLogin()
+    } else {
+      showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+    }
+  } catch (e) {
+    showToast('Error', e.message, 'error')
+  } finally {
+    isStartingLogin.value = false
+  }
+}
+
+const startPollingLogin = () => {
+  isPollingLogin.value = true
+  loginPollTimer = setInterval(async () => {
+    try {
+      const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/login/status`)
+      const data = await res.json()
+      if (data.authenticated) {
+        clearInterval(loginPollTimer)
+        isPollingLogin.value = false
+        loginUrl.value = null
+        showToast('Success', 'Authentication successful! cert.pem saved.', 'success')
+        await fetchStatus()
+      }
+    } catch (e) {
+      clearInterval(loginPollTimer)
+      isPollingLogin.value = false
+    }
+  }, 3000)
+}
+
+const copyToClipboard = (text) => {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Copied', 'URL copied to clipboard', 'success')
+  })
+}
+
+// ── Route management ─────────────────────────────────────────
+const addRoute = async () => {
+  if (!newHostname.value || !newService.value || !localConfig.value?.tunnel) {
+    showToast('Warning', 'Hostname, service, and tunnel name are required', 'warning')
+    return
+  }
+  isAddingRoute.value = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/routes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tunnel_name: localConfig.value.tunnel,
+        hostname: newHostname.value.trim(),
+        service: newService.value.trim()
+      })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      showToast('Success', data.message, 'success')
+      newHostname.value = ''
+      newService.value = 'http://127.0.0.1:'
+      await fetchConfig()
+    } else {
+      showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
+    }
+  } catch (e) {
+    showToast('Error', e.message, 'error')
+  } finally {
+    isAddingRoute.value = false
   }
 }
 
 const deleteRoute = (hostname) => {
-  showConfirm("Hapus Route", `Yakin ingin menghapus route untuk domain ${hostname}?`, async () => {
+  showConfirm('Hapus Route', `Yakin ingin menghapus route untuk domain "${hostname}"?`, async () => {
     try {
-      const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/routes`, {
+      const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/routes`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hostname, service: '' })
+        body: JSON.stringify({ hostname })
       })
       const data = await res.json()
-      if(res.ok) {
-        showToast("Success", "Route deleted", "success")
-        fetchRoutes()
+      if (res.ok) {
+        showToast('Success', data.message, 'success')
+        await fetchConfig()
       } else {
-        showToast("Error", data, "error")
+        showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
       }
-    } catch(e) {
-      showToast("Error", e.message, "error")
+    } catch (e) {
+      showToast('Error', e.message, 'error')
     }
   })
 }
 
-onMounted(() => {
-  fetchConfig().then(fetchRoutes)
-})
+// ── Restart ──────────────────────────────────────────────────
+const restartService = async () => {
+  isRestarting.value = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/restart`, { method: 'POST' })
+    const data = await res.json()
+    if (res.ok) {
+      showToast('Success', data.message, 'success')
+      await fetchStatus()
+    } else {
+      showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+    }
+  } catch (e) {
+    showToast('Error', e.message, 'error')
+  } finally {
+    isRestarting.value = false
+  }
+}
+
+const quickRefCommands = [
+  { command: 'sudo systemctl restart cloudflared', description: 'Apply latest ingress rules from config.yml' },
+  { command: 'sudo systemctl status cloudflared', description: 'Check if tunnel daemon is active (running)' },
+  { command: 'sudo journalctl -u cloudflared -f', description: 'Monitor live traffic & error logs' },
+  { command: 'cloudflared tunnel list', description: 'Show UUID and connection status of your tunnel' },
+  { command: 'cat /etc/cloudflared/config.yml', description: 'View current hostname routing config' },
+  { command: 'cloudflared tunnel login', description: 'Authorize server with Cloudflare (creates cert.pem)' },
+]
+
+onMounted(fetchStatus)
 </script>
 
 <template>
   <div class="space-y-6">
-    <!-- API Config Form -->
-    <section class="card">
-      <h2 class="card-title"><KeyRound class="w-5 h-5 text-brand-500" /> Cloudflare API Configuration</h2>
-      <p class="text-sm text-slate-500 mb-4">Required to manage Zero Trust Tunnel routes programmatically.</p>
-      
-      <div v-if="isLoadingConfig" class="flex gap-2 items-center text-sm text-slate-500">
-        <Loader2 class="w-4 h-4 animate-spin" /> Loading config...
-      </div>
-      <div v-else class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <div>
-          <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Account ID</label>
-          <input v-model="config.account_id" type="text" placeholder="e.g. 1a2b3c..." class="input-field font-mono text-sm">
-        </div>
-        <div>
-          <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Tunnel ID</label>
-          <input v-model="config.tunnel_id" type="text" placeholder="e.g. d6f9f7..." class="input-field font-mono text-sm">
-        </div>
-        <div>
-          <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">API Token</label>
-          <input v-model="config.api_token" type="password" placeholder="Cloudflare API Token" class="input-field font-mono text-sm">
-        </div>
-      </div>
-      <div class="flex gap-2">
-        <button @click="saveConfig" class="btn-primary"><Save class="w-4 h-4" /> Save Config</button>
-        <button @click="fetchRoutes" class="btn-outline" :disabled="!config.api_token"><RefreshCw class="w-4 h-4" /> Load Routes</button>
-      </div>
-    </section>
 
-    <!-- Published Routes -->
-    <section class="card">
-      <h2 class="card-title"><Route class="w-5 h-5 text-brand-500" /> Published Application Routes</h2>
-      <p class="text-sm text-slate-500 mb-6">Allow your Tunnel to reach applications whose domains you connected to Cloudflare.</p>
-      
-      <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 mb-6">
-        <h3 class="text-sm font-semibold mb-3">Add New Route</h3>
-        <div class="flex flex-col sm:flex-row gap-3">
-          <input v-model="newHostname" type="text" placeholder="Public Hostname (e.g. app.widy4aa.my.id)" class="input-field sm:w-1/2">
-          <input v-model="newService" type="text" placeholder="Service URL (e.g. http://127.0.0.1:80)" class="input-field flex-1">
-          <button @click="addRoute" class="btn-primary whitespace-nowrap"><Plus class="w-4 h-4" /> Add Route</button>
+    <!-- ── Loading State ───────────────────────────────────────── -->
+    <div v-if="isLoadingStatus" class="flex items-center gap-2 p-6 text-slate-500">
+      <Loader2 class="w-5 h-5 animate-spin" />
+      <span>Loading Cloudflare status...</span>
+    </div>
+
+    <template v-else-if="status">
+
+      <!-- ── Section 1: Status Card ─────────────────────────────── -->
+      <section class="card">
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h2 class="card-title">
+              <Cloud class="w-5 h-5 text-brand-500" />
+              Cloudflare Tunnel — Local Management
+            </h2>
+            <p class="text-sm text-slate-500 mt-0.5">Manage tunnels via <code class="bg-slate-100 px-1 rounded text-xs">/etc/cloudflared/config.yml</code></p>
+          </div>
+          <div class="flex gap-2">
+            <button @click="fetchStatus" class="btn-outline text-xs" title="Refresh status">
+              <RefreshCw class="w-4 h-4" />
+            </button>
+            <button v-if="status.service_active || status.running" @click="restartService" class="btn-outline text-xs" :disabled="isRestarting">
+              <Loader2 v-if="isRestarting" class="w-4 h-4 animate-spin" />
+              <RefreshCw v-else class="w-4 h-4" />
+              Restart Service
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div v-if="isLoadingRoutes" class="flex justify-center p-8">
-        <Loader2 class="w-8 h-8 animate-spin text-brand-500" />
-      </div>
-      
-      <div v-else class="overflow-x-auto">
-        <table class="w-full relative">
-          <thead class="bg-white border-b-2 border-slate-200">
-            <tr>
-              <th class="table-th">Public Hostname</th>
-              <th class="table-th">Service Origin</th>
-              <th class="table-th text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in routes" :key="r.hostname" class="hover:bg-slate-50">
-              <td class="table-td font-semibold text-brand-700">{{ r.hostname }}</td>
-              <td class="table-td font-mono text-xs">{{ r.service }}</td>
-              <td class="table-td text-right">
-                <button @click="deleteRoute(r.hostname)" class="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" title="Remove Route">
-                  <Trash2 class="w-4 h-4" />
-                </button>
-              </td>
-            </tr>
-            <tr v-if="routes.length === 0">
-              <td colspan="3" class="text-center p-6 text-slate-500">No routes published. Sync config first or add a new route.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+        <!-- Status badges -->
+        <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <!-- Installed -->
+          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.installed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'">
+            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.installed ? 'text-green-600' : 'text-red-600'">Binary</span>
+            <div class="flex items-center gap-1.5">
+              <CheckCircle2 v-if="status.installed" class="w-4 h-4 text-green-500" />
+              <XCircle v-else class="w-4 h-4 text-red-400" />
+              <span class="text-xs font-semibold" :class="status.installed ? 'text-green-700' : 'text-red-600'">
+                {{ status.installed ? 'Installed' : 'Not Installed' }}
+              </span>
+            </div>
+            <span v-if="status.version" class="text-[10px] font-mono text-slate-500">v{{ status.version }}</span>
+          </div>
 
+          <!-- Service Active -->
+          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.service_active ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'">
+            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.service_active ? 'text-green-600' : 'text-slate-500'">Service</span>
+            <div class="flex items-center gap-1.5">
+              <CheckCircle2 v-if="status.service_active" class="w-4 h-4 text-green-500" />
+              <XCircle v-else class="w-4 h-4 text-slate-400" />
+              <span class="text-xs font-semibold" :class="status.service_active ? 'text-green-700' : 'text-slate-600'">
+                {{ status.service_active ? 'Active' : 'Inactive' }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Auth -->
+          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.auth_cert_exists ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'">
+            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.auth_cert_exists ? 'text-green-600' : 'text-amber-600'">Auth</span>
+            <div class="flex items-center gap-1.5">
+              <ShieldCheck v-if="status.auth_cert_exists" class="w-4 h-4 text-green-500" />
+              <AlertTriangle v-else class="w-4 h-4 text-amber-400" />
+              <span class="text-xs font-semibold" :class="status.auth_cert_exists ? 'text-green-700' : 'text-amber-700'">
+                {{ status.auth_cert_exists ? 'Authorized' : 'Not Authorized' }}
+              </span>
+            </div>
+            <span class="text-[10px] text-slate-500">cert.pem</span>
+          </div>
+
+          <!-- Config / Tunnel -->
+          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.config_exists ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'">
+            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.config_exists ? 'text-green-600' : 'text-slate-500'">Tunnel Config</span>
+            <div class="flex items-center gap-1.5">
+              <CheckCircle2 v-if="status.config_exists" class="w-4 h-4 text-green-500" />
+              <XCircle v-else class="w-4 h-4 text-slate-400" />
+              <span class="text-xs font-semibold" :class="status.config_exists ? 'text-green-700' : 'text-slate-600'">
+                {{ status.config_exists ? 'Found' : 'Not Found' }}
+              </span>
+            </div>
+            <span v-if="status.tunnel_uuid" class="text-[10px] font-mono text-slate-500 truncate" :title="status.tunnel_uuid">{{ status.tunnel_uuid.substring(0,8) }}...</span>
+          </div>
+        </div>
+
+        <!-- Install button jika belum install -->
+        <div v-if="!status.installed" class="mt-4">
+          <button @click="installCloudflared" class="btn-primary" :disabled="isInstalling">
+            <Loader2 v-if="isInstalling" class="w-4 h-4 animate-spin" />
+            <DownloadCloud v-else class="w-4 h-4" />
+            {{ isInstalling ? 'Installing...' : 'Install cloudflared' }}
+          </button>
+        </div>
+      </section>
+
+      <!-- ── Section 2: Setup Steps (jika belum fully setup) ──────── -->
+      <section v-if="status.installed && !isFullySetup" class="card space-y-6">
+        <h2 class="card-title">
+          <Terminal class="w-5 h-5 text-brand-500" />
+          Setup — First Time Configuration
+        </h2>
+
+        <!-- Step 1: Authorize -->
+        <div class="space-y-3">
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center"
+              :class="status.auth_cert_exists ? 'bg-green-100 text-green-700' : 'bg-brand-100 text-brand-700'">
+              {{ status.auth_cert_exists ? '✓' : '1' }}
+            </span>
+            <h3 class="font-semibold text-sm text-slate-800">Authorize with Cloudflare</h3>
+          </div>
+          <p class="text-xs text-slate-500 ml-8">
+            Runs <code class="bg-slate-100 px-1 rounded">cloudflared tunnel login</code> — opens a Cloudflare URL to authorize your server. After authorization, <code class="bg-slate-100 px-1 rounded">cert.pem</code> is saved automatically.
+          </p>
+
+          <div v-if="status.auth_cert_exists" class="ml-8 flex items-center gap-2 text-green-600 text-sm">
+            <CheckCircle2 class="w-4 h-4" /> Already authorized
+          </div>
+
+          <div v-else class="ml-8 space-y-3">
+            <button @click="startLogin" class="btn-primary" :disabled="isStartingLogin || isPollingLogin">
+              <Loader2 v-if="isStartingLogin || isPollingLogin" class="w-4 h-4 animate-spin" />
+              <KeyRound v-else class="w-4 h-4" />
+              {{ isStartingLogin ? 'Starting...' : isPollingLogin ? 'Waiting for authorization...' : 'Start Cloudflare Login' }}
+            </button>
+
+            <!-- Authorization URL box -->
+            <div v-if="loginUrl" class="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p class="text-xs font-semibold text-amber-700 mb-2">Open this URL in your browser and authorize your domain:</p>
+              <div class="flex items-start gap-2">
+                <a :href="loginUrl" target="_blank" class="text-xs font-mono text-brand-700 hover:underline break-all flex-1">
+                  {{ loginUrl }}
+                </a>
+                <div class="flex gap-1 flex-shrink-0">
+                  <button @click="copyToClipboard(loginUrl)" class="p-1.5 rounded hover:bg-amber-100" title="Copy URL">
+                    <Copy class="w-3.5 h-3.5 text-amber-600" />
+                  </button>
+                  <a :href="loginUrl" target="_blank" class="p-1.5 rounded hover:bg-amber-100" title="Open in new tab">
+                    <ExternalLink class="w-3.5 h-3.5 text-amber-600" />
+                  </a>
+                </div>
+              </div>
+              <p v-if="isPollingLogin" class="text-[10px] text-amber-600 mt-2 flex items-center gap-1">
+                <Loader2 class="w-3 h-3 animate-spin" />
+                Waiting for you to authorize in the browser...
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <hr class="border-slate-200" />
+
+        <!-- Step 2: Create Tunnel -->
+        <div class="space-y-3">
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center"
+              :class="status.config_exists ? 'bg-green-100 text-green-700' : 'bg-brand-100 text-brand-700'">
+              {{ status.config_exists ? '✓' : '2' }}
+            </span>
+            <h3 class="font-semibold text-sm text-slate-800">Create a Named Tunnel</h3>
+          </div>
+          <p class="text-xs text-slate-500 ml-8">
+            Runs <code class="bg-slate-100 px-1 rounded">cloudflared tunnel create &lt;name&gt;</code> — creates a tunnel UUID and credentials file. Then manually create <code class="bg-slate-100 px-1 rounded">/etc/cloudflared/config.yml</code> referencing this tunnel.
+          </p>
+
+          <div v-if="status.config_exists" class="ml-8 flex items-center gap-2 text-green-600 text-sm">
+            <CheckCircle2 class="w-4 h-4" /> Tunnel configured (UUID: {{ status.tunnel_uuid ?? 'unknown' }})
+          </div>
+
+          <div v-else class="ml-8 space-y-3">
+            <div class="flex gap-2">
+              <input
+                v-model="newTunnelName"
+                type="text"
+                placeholder="e.g. my-server-1"
+                class="input-field max-w-xs"
+                :disabled="isCreatingTunnel"
+              />
+              <button @click="createTunnel" class="btn-primary" :disabled="isCreatingTunnel">
+                <Loader2 v-if="isCreatingTunnel" class="w-4 h-4 animate-spin" />
+                <Plus v-else class="w-4 h-4" />
+                {{ isCreatingTunnel ? 'Creating...' : 'Create Tunnel' }}
+              </button>
+            </div>
+
+            <!-- Output dari create tunnel -->
+            <div v-if="createTunnelResult" class="p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p class="text-xs font-semibold text-green-700 mb-1">{{ createTunnelResult.message }}</p>
+              <p v-if="createTunnelResult.uuid" class="text-xs font-mono text-slate-700">
+                UUID: <strong>{{ createTunnelResult.uuid }}</strong>
+              </p>
+              <p class="text-xs text-slate-500 mt-2">
+                Next: create <code class="bg-slate-100 px-1 rounded">/etc/cloudflared/config.yml</code> with this tunnel UUID, then come back to add routes.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Section 3: Ingress Routes (hanya jika config ada) ──── -->
+      <section v-if="status.config_exists" class="card">
+        <div class="flex items-center justify-between gap-4 flex-wrap mb-4">
+          <h2 class="card-title">
+            <ChevronRight class="w-5 h-5 text-brand-500" />
+            Ingress Routes
+            <span v-if="localConfig" class="text-xs font-normal text-slate-500 ml-1">
+              (Tunnel: <code class="font-mono">{{ localConfig.tunnel }}</code>)
+            </span>
+          </h2>
+          <button @click="fetchConfig" class="btn-outline text-xs" :disabled="isLoadingConfig">
+            <Loader2 v-if="isLoadingConfig" class="w-3.5 h-3.5 animate-spin" />
+            <RefreshCw v-else class="w-3.5 h-3.5" />
+            Sync
+          </button>
+        </div>
+
+        <!-- Add route form -->
+        <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-5">
+          <h3 class="text-sm font-semibold mb-3 text-slate-700">Add New Route</h3>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input
+              v-model="newHostname"
+              type="text"
+              placeholder="Public hostname (e.g. app.widy4aa.my.id)"
+              class="input-field sm:flex-1"
+              :disabled="isAddingRoute"
+            />
+            <input
+              v-model="newService"
+              type="text"
+              placeholder="Local service (e.g. http://127.0.0.1:8080)"
+              class="input-field sm:flex-1"
+              :disabled="isAddingRoute"
+            />
+            <button @click="addRoute" class="btn-primary whitespace-nowrap" :disabled="isAddingRoute">
+              <Loader2 v-if="isAddingRoute" class="w-4 h-4 animate-spin" />
+              <Plus v-else class="w-4 h-4" />
+              {{ isAddingRoute ? 'Adding...' : 'Add Route' }}
+            </button>
+          </div>
+          <p class="text-[10px] text-slate-400 mt-2">
+            Adding a route will: (1) register DNS CNAME via <code>cloudflared tunnel route dns</code>, (2) update config.yml, (3) restart service.
+          </p>
+        </div>
+
+        <!-- Routes table -->
+        <div v-if="isLoadingConfig" class="flex justify-center py-8">
+          <Loader2 class="w-6 h-6 animate-spin text-brand-500" />
+        </div>
+
+        <div v-else-if="localConfig" class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-slate-50 border-b-2 border-slate-200">
+              <tr>
+                <th class="table-th">Public Hostname</th>
+                <th class="table-th">Local Service</th>
+                <th class="table-th text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="r in routes" :key="r.hostname" class="hover:bg-slate-50 border-b border-slate-100">
+                <td class="table-td font-semibold text-brand-700">
+                  <a :href="`https://${r.hostname}`" target="_blank" class="hover:underline flex items-center gap-1">
+                    {{ r.hostname }}
+                    <ExternalLink class="w-3 h-3 text-slate-400" />
+                  </a>
+                </td>
+                <td class="table-td font-mono text-xs text-slate-600">{{ r.service }}</td>
+                <td class="table-td text-right">
+                  <button
+                    @click="deleteRoute(r.hostname)"
+                    class="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                    title="Remove Route"
+                  >
+                    <Trash2 class="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="routes.length === 0">
+                <td colspan="3" class="text-center p-6 text-slate-500 text-sm">
+                  No ingress routes configured. Add one above.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <!-- Catch-all info -->
+          <div class="mt-2 px-2 text-[10px] text-slate-400">
+            Fallback: <code>http_status:404</code> (always last)
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Section 4: Quick Reference ────────────────────────── -->
+      <section v-if="status.installed" class="card">
+        <h2 class="card-title">
+          <Terminal class="w-5 h-5 text-brand-500" />
+          Quick Reference — Useful Commands
+        </h2>
+        <div class="mt-3 overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead class="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th class="text-left px-3 py-2 font-semibold text-slate-600">Command</th>
+                <th class="text-left px-3 py-2 font-semibold text-slate-600">Description</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr v-for="cmd in quickRefCommands" :key="cmd.command" class="hover:bg-slate-50">
+                <td class="px-3 py-2.5 font-mono text-slate-700 whitespace-nowrap">{{ cmd.command }}</td>
+                <td class="px-3 py-2.5 text-slate-500">{{ cmd.description }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </template>
   </div>
 </template>
