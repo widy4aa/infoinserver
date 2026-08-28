@@ -7,6 +7,9 @@ edition = "2024"
 argon2 = "0.5.3"
 axum = { version = "0.8.9", features = ["multipart", "ws"] }
 axum-auth = "0.8.1"
+jsonwebtoken = "9"
+libc = "0.2"
+pam = "0.8"
 chrono = { version = "0.4.45", features = ["serde"] }
 dotenvy = "0.15.7"
 futures-util = "0.3.34"

@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
 import { Cloud, CheckCircle2, XCircle, Play, Square, Loader2, DownloadCloud } from 'lucide-vue-next'
 
+const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showConfirm, showToast } = useToastStore()
 
@@ -18,7 +20,7 @@ let pollInterval = null
 
 const fetchStatus = async () => {
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/cloudflare/status`)
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/status`)
     if (res.ok) {
       status.value = await res.json()
     }
@@ -31,7 +33,7 @@ const fetchStatus = async () => {
 
 const handleAction = async (endpoint, payload = null) => {
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/cloudflare/${endpoint}`, {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/${endpoint}`, {
       method: 'POST',
       headers: payload ? { 'Content-Type': 'application/json' } : {},
       body: payload ? JSON.stringify(payload) : null
@@ -127,7 +129,7 @@ onUnmounted(() => {
           
           <div class="flex flex-col gap-2">
             <input v-model="managedToken" type="password" placeholder="eyJhIjoi..." class="input-field font-mono text-xs">
-            <button @click="handleAction('managed', { token: managedToken })" class="btn-outline border-brand-200 text-brand-600 hover:bg-brand-50">
+            <button @click="handleAction('managed', { token: managedToken })" class="btn-outline text-brand-600">
               <CheckCircle2 class="w-4 h-4" /> Install Service
             </button>
           </div>

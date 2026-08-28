@@ -6,6 +6,8 @@ import PortsView from '../views/PortsView.vue'
 import PodmanView from '../views/PodmanView.vue'
 import CloudflareView from '../views/CloudflareView.vue'
 import FilesView from '../views/FilesView.vue'
+import SpeedtestView from '../views/SpeedtestView.vue'
+import LogsView from '../views/LogsView.vue'
 import SettingsView from '../views/SettingsView.vue'
 
 const router = createRouter({
@@ -26,10 +28,12 @@ const router = createRouter({
       component: ServerLayout,
       children: [
         { path: 'dashboard', name: 'dashboard', component: DashboardView },
+        { path: 'speedtest', name: 'speedtest', component: SpeedtestView },
         { path: 'ports', name: 'ports', component: PortsView },
         { path: 'cloudflare', name: 'cloudflare', component: CloudflareView },
         { path: 'podman', name: 'podman', component: PodmanView },
         { path: 'files', name: 'files', component: FilesView },
+        { path: 'logs', name: 'logs', component: LogsView },
         { path: 'settings', name: 'settings', component: SettingsView },
       ]
     }

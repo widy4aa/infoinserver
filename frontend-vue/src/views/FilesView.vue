@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
 import { FolderTree, DownloadCloud, Upload, ArrowUp, Folder, FileText, Download } from 'lucide-vue-next'
 
+const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast } = useToastStore()
 
@@ -14,7 +16,7 @@ const isError = ref(false)
 
 const fetchFiles = async (path) => {
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/files/list?path=${encodeURIComponent(path)}`)
+    const res = await apiFetch(`${getActiveServerUrl()}/api/files/list?path=${encodeURIComponent(path)}`)
     if(!res.ok) throw new Error()
     files.value = await res.json()
     currentPath.value = path
@@ -40,7 +42,7 @@ const handleUpload = async (event) => {
   for(let i=0; i<fileList.length; i++) fd.append('file', fileList[i])
     
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/files/upload?path=${encodeURIComponent(currentPath.value)}`, {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/files/upload?path=${encodeURIComponent(currentPath.value)}`, {
       method: 'POST',
       body: fd
     })
@@ -65,7 +67,7 @@ const promptFetch = async () => {
   showToast("Info", "Fetching from URL...")
   
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/files/fetch`, {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/files/fetch`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ url, path: currentPath.value })
@@ -106,8 +108,8 @@ onMounted(() => fetchFiles('/'))
     </div>
     
     <div class="flex items-center gap-3 mb-4 p-2 bg-slate-50 rounded border border-slate-200 shrink-0">
-      <button @click="navigateUp" class="p-1.5 hover:bg-slate-200 rounded text-slate-600" title="Up Directory">
-        <ArrowUp class="w-5 h-5" />
+      <button @click="navigateUp" class="btn-icon" title="Up Directory">
+        <ArrowUp class="w-4 h-4" />
       </button>
       <div class="text-sm font-mono text-slate-700 flex-1 overflow-x-hidden text-ellipsis whitespace-nowrap">{{ currentPath }}</div>
     </div>
@@ -136,8 +138,8 @@ onMounted(() => fetchFiles('/'))
             </td>
             <td class="table-td text-slate-500 text-xs">{{ f.is_dir ? '-' : formatSize(f.size) }}</td>
             <td class="table-td text-right">
-              <a v-if="!f.is_dir" :href="`${getActiveServerUrl()}/api/files/download?path=${encodeURIComponent(currentPath==='/' ? '/'+f.name : currentPath+'/'+f.name)}`" target="_blank" download class="p-1.5 inline-flex hover:bg-brand-50 text-brand-600 rounded">
-                <Download class="w-4 h-4" />
+              <a v-if="!f.is_dir" :href="`${getActiveServerUrl()}/api/files/download?path=${encodeURIComponent(currentPath==='/' ? '/'+f.name : currentPath+'/'+f.name)}`" target="_blank" download class="btn-icon-blue" title="Download">
+                <Download class="w-3.5 h-3.5" />
               </a>
             </td>
           </tr>

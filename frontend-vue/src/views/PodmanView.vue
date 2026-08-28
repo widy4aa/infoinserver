@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { Box, Play, Square, RefreshCw, Trash2, FileText } from 'lucide-vue-next'
 import { useToastStore } from '../stores/toastStore'
 
+const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showConfirm, showToast } = useToastStore()
 const containers = ref([])
@@ -19,14 +21,14 @@ let pollInterval = null
 
 const fetchContainers = async () => {
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/podman/containers`)
+    const res = await apiFetch(`${getActiveServerUrl()}/api/podman/containers`)
     if(res.ok) containers.value = await res.json()
   } catch (e) {}
 }
 
 const executeAction = async (action, id) => {
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/podman/containers/${action}/${id}`, { method: 'POST' })
+    const res = await apiFetch(`${getActiveServerUrl()}/api/podman/containers/${action}/${id}`, { method: 'POST' })
     const data = await res.json()
     if (res.ok) {
       showToast("Success", data.message || `Container ${action} successful`, "success")
@@ -59,7 +61,7 @@ const createContainer = async () => {
   try {
     msg.value = 'Deploying...'
     isError.value = false
-    const res = await fetch(`${getActiveServerUrl()}/api/podman/create`, {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/podman/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: cName.value, image: cImage.value, ports: portsArr })
@@ -110,7 +112,7 @@ onUnmounted(() => {
             <th class="table-th">Name</th>
             <th class="table-th">Image</th>
             <th class="table-th">Status</th>
-            <th class="table-th text-right">Actions</th>
+            <th class="table-th">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -127,12 +129,30 @@ onUnmounted(() => {
               </div>
               <div class="text-[10px] text-slate-400 mt-1">{{ c.Status }}</div>
             </td>
-            <td class="table-td text-right">
-              <div class="flex items-center justify-end gap-1">
-                <button @click="performAction('start', c.Id)" class="p-1 hover:bg-green-50 text-green-600 rounded disabled:opacity-30" :disabled="c.State==='running'" title="Start"><Play class="w-4 h-4" /></button>
-                <button @click="performAction('stop', c.Id)" class="p-1 hover:bg-amber-50 text-amber-600 rounded disabled:opacity-30" :disabled="c.State!=='running'" title="Stop"><Square class="w-4 h-4" /></button>
-                <button @click="performAction('restart', c.Id)" class="p-1 hover:bg-blue-50 text-blue-600 rounded" title="Restart"><RefreshCw class="w-4 h-4" /></button>
-                <button @click="performAction('rm', c.Id)" class="p-1 hover:bg-red-50 text-red-600 rounded" title="Delete"><Trash2 class="w-4 h-4" /></button>
+            <td class="table-td">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <button @click="performAction('start', c.Id)"
+                  :disabled="c.State==='running'"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-all duration-150 active:scale-95
+                         bg-green-100 text-green-800 hover:bg-green-200 disabled:opacity-30 disabled:cursor-not-allowed">
+                  <Play class="w-3 h-3" /> Start
+                </button>
+                <button @click="performAction('stop', c.Id)"
+                  :disabled="c.State!=='running'"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-all duration-150 active:scale-95
+                         bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:opacity-30 disabled:cursor-not-allowed">
+                  <Square class="w-3 h-3" /> Stop
+                </button>
+                <button @click="performAction('restart', c.Id)"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-all duration-150 active:scale-95
+                         bg-blue-100 text-blue-800 hover:bg-blue-200">
+                  <RefreshCw class="w-3 h-3" /> Restart
+                </button>
+                <button @click="performAction('rm', c.Id)"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition-all duration-150 active:scale-95
+                         bg-red-100 text-red-800 hover:bg-red-200">
+                  <Trash2 class="w-3 h-3" /> Delete
+                </button>
               </div>
             </td>
           </tr>

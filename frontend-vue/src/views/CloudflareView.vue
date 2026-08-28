@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
 import { Cloud, Save, Route, Plus, Trash2, Loader2, KeyRound } from 'lucide-vue-next'
 
+const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
 
@@ -18,7 +20,7 @@ const newService = ref('')
 
 const fetchConfig = async () => {
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/cloudflare/api/config`)
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/config`)
     if(res.ok) {
       const data = await res.json()
       if(data) config.value = data
@@ -29,7 +31,7 @@ const fetchConfig = async () => {
 
 const saveConfig = async () => {
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/cloudflare/api/config`, {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/config`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config.value)
@@ -46,7 +48,7 @@ const fetchRoutes = async () => {
   if (!config.value.account_id || !config.value.tunnel_id || !config.value.api_token) return
   isLoadingRoutes.value = true
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/cloudflare/api/routes`)
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/routes`)
     const data = await res.json()
     if(res.ok) {
       const ingress = data?.result?.config?.ingress || []
@@ -70,7 +72,7 @@ const addRoute = async () => {
   
   showToast("Info", "Creating route in Cloudflare...")
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/cloudflare/api/routes`, {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/routes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hostname: newHostname.value, service: newService.value })
@@ -92,7 +94,7 @@ const addRoute = async () => {
 const deleteRoute = (hostname) => {
   showConfirm("Hapus Route", `Yakin ingin menghapus route untuk domain ${hostname}?`, async () => {
     try {
-      const res = await fetch(`${getActiveServerUrl()}/api/cloudflare/api/routes`, {
+      const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/api/routes`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hostname, service: '' })

@@ -40,7 +40,7 @@ const handleUpdate = async () => {
           </RouterLink>
           
           <div class="flex items-center gap-4">
-            <button @click="handleUpdate" class="btn-outline text-brand-600 border-brand-200 hover:bg-brand-50" title="Pull changes and rebuild">
+            <button @click="handleUpdate" class="btn-outline text-brand-600" title="Pull changes and rebuild">
               <RefreshCw class="w-4 h-4" />
               <span class="hidden sm:inline">Update Dashboard</span>
             </button>

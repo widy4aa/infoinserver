@@ -1,7 +1,9 @@
-use axum::{Json, http::StatusCode};
+use axum::{Json, http::StatusCode, extract::Extension};
 use serde::Serialize;
 use tokio::process::Command;
 use std::time::Duration;
+use crate::auth::jwt_middleware::AuthUser;
+use crate::routes::process_mgmt::sudo_exec;
 
 #[derive(Serialize)]
 pub struct MgmtResponse {
@@ -10,7 +12,6 @@ pub struct MgmtResponse {
 }
 
 pub async fn update_dashboard_handler() -> Result<Json<MgmtResponse>, (StatusCode, String)> {
-    // 1. Git Pull
     let pull_cmd = Command::new("git")
         .arg("pull")
         .output()
@@ -22,7 +23,6 @@ pub async fn update_dashboard_handler() -> Result<Json<MgmtResponse>, (StatusCod
         return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Git pull failed: {}", stderr)));
     }
 
-    // 2. Cargo Build --release
     let build_cmd = Command::new("cargo")
         .args(["build", "--release"])
         .output()
@@ -34,18 +34,12 @@ pub async fn update_dashboard_handler() -> Result<Json<MgmtResponse>, (StatusCod
         return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Build failed: {}", stderr)));
     }
 
-    // 3. Restart process in background jika build sukses
     tokio::spawn(async {
-        // Beri waktu agar respons HTTP berhasil dikirim ke frontend terlebih dahulu
         tokio::time::sleep(Duration::from_secs(2)).await;
-        
-        // Memanggil skrip restart terpisah
         let _ = Command::new("bash")
             .arg("-c")
             .arg("./stop.sh && ./start.sh")
             .spawn();
-        
-        // Matikan instance saat ini
         std::process::exit(0);
     });
 
@@ -55,34 +49,26 @@ pub async fn update_dashboard_handler() -> Result<Json<MgmtResponse>, (StatusCod
     }))
 }
 
-pub async fn reboot_server_handler() -> Result<Json<MgmtResponse>, (StatusCode, String)> {
-    // Mengeksekusi perintah reboot OS
-    let reboot_cmd = Command::new("sudo")
-        .arg("reboot")
-        .output()
-        .await;
+pub async fn reboot_server_handler(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<MgmtResponse>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
 
-    // Fallback jika tanpa sudo bisa (biasanya di environment root)
-    let final_status = match reboot_cmd {
-        Ok(out) if out.status.success() => Ok(out),
-        _ => {
-            Command::new("reboot").output().await
-        }
-    };
+    // Jalankan di blocking thread karena sudo_exec blocking
+    let result = tokio::task::spawn_blocking(move || {
+        sudo_exec(&password, &["reboot"])
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Reboot failed: {}", e)))?;
 
-    match final_status {
-        Ok(out) if out.status.success() => {
-            Ok(Json(MgmtResponse {
-                status: "success".to_string(),
-                message: "Server is rebooting now...".to_string(),
-            }))
-        }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Reboot failed (permission denied?): {}", stderr)))
-        }
-        Err(e) => {
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Reboot execution failed: {}", e)))
-        }
+    if result.status.success() {
+        Ok(Json(MgmtResponse {
+            status: "success".to_string(),
+            message: "Server is rebooting now...".to_string(),
+        }))
+    } else {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Reboot failed: {}", stderr)))
     }
 }

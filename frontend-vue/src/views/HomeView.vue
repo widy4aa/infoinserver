@@ -1,27 +1,9 @@
 <script setup>
-import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useServerStore } from '../stores/serverStore'
-import { Server, Plus, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Trash2, Cloud } from 'lucide-vue-next'
+import { Server, Plus, ShieldCheck, Box, FolderTree, Settings, Cloud, Activity } from 'lucide-vue-next'
 
-const { servers, removeServer } = useServerStore()
-const serverHostnames = ref({})
-
-const fetchHostname = async (server) => {
-  try {
-    const res = await fetch(`${server.url}/api/system`)
-    if (res.ok) {
-      const data = await res.json()
-      serverHostnames.value[server.id] = data.hostname || server.name
-    }
-  } catch (e) {
-    console.error(`Failed to fetch hostname for ${server.url}`, e)
-  }
-}
-
-onMounted(() => {
-  servers.value.forEach(s => fetchHostname(s))
-})
+const { servers } = useServerStore()
 </script>
 
 <template>
@@ -49,16 +31,18 @@ onMounted(() => {
             <Server class="w-6 h-6" />
           </div>
           <div class="flex-1 min-w-0">
-            <!-- Menampilkan Hostname OS jika didapat, jika gagal tampilkan nama alias -->
-            <h3 class="font-bold text-slate-800 text-lg leading-tight truncate" :title="serverHostnames[s.id] || s.name">
-              {{ serverHostnames[s.id] || s.name }}
+            <h3 class="font-bold text-slate-800 text-lg leading-tight truncate" :title="s.name">
+              {{ s.name }}
             </h3>
             <div class="text-xs text-slate-500 font-mono mt-1 truncate">{{ s.url }}</div>
           </div>
         </RouterLink>
 
         <!-- Footer Menu (Quick Links) -->
-        <div class="p-2 border-t border-slate-100 bg-white grid grid-cols-5 divide-x divide-slate-100">
+        <div class="p-2 border-t border-slate-100 bg-white grid grid-cols-6 divide-x divide-slate-100">
+          <RouterLink :to="`/server/${s.id}/speedtest`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Speedtest">
+            <Activity class="w-4 h-4" />
+          </RouterLink>
           <RouterLink :to="`/server/${s.id}/ports`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Ports & Scan">
             <ShieldCheck class="w-4 h-4" />
           </RouterLink>

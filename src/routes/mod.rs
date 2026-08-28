@@ -14,3 +14,7 @@ pub mod terminal;
 pub mod terminal_ws;
 pub mod cloudflare;
 pub mod cloudflare_api;
+pub mod auth;
+pub mod metrics_ws;
+pub mod metrics_history;
+pub mod logs;

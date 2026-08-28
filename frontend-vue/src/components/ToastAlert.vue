@@ -44,7 +44,7 @@ const bgClass = computed(() => {
       </div>
       <div class="bg-slate-50 px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
         <button @click="state.onCancel" class="btn-outline">Cancel</button>
-        <button @click="state.onConfirm" class="btn-primary" :class="state.type === 'confirm' && state.title.includes('DANGER') ? 'bg-red-600 hover:bg-red-700 text-white border-transparent' : ''">Confirm</button>
+        <button @click="state.onConfirm" class="btn-primary" :class="state.title.includes('DANGER') ? '!bg-red-600 hover:!bg-red-700' : ''">Confirm</button>
       </div>
     </div>
   </div>

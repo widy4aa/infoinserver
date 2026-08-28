@@ -1,10 +1,12 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { Network, Radar, ShieldCheck } from 'lucide-vue-next'
 
 import { useToastStore } from '../stores/toastStore'
 
+const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
 
@@ -21,14 +23,14 @@ let currentScanJobId = null
 
 const fetchNetwork = async () => {
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/network`)
+    const res = await apiFetch(`${getActiveServerUrl()}/api/network`)
     networkInterfaces.value = await res.json()
   } catch (e) {}
 }
 
 const fetchPorts = async () => {
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/ports`)
+    const res = await apiFetch(`${getActiveServerUrl()}/api/ports`)
     listeningPorts.value = await res.json()
   } catch (e) {}
 }
@@ -42,7 +44,7 @@ const startScan = async () => {
   if (scanPollInterval) clearInterval(scanPollInterval)
 
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/ports/scan`, {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/ports/scan`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ target: scanTarget.value })
@@ -70,7 +72,7 @@ const extractPid = (processStr) => {
 const killPortProcess = (pid) => {
   showConfirm("Konfirmasi", `Are you sure you want to FORCE KILL process PID ${pid}?`, async () => {
     try {
-      const res = await fetch(`${getActiveServerUrl()}/api/process/kill/${pid}`, { method: 'POST' })
+      const res = await apiFetch(`${getActiveServerUrl()}/api/process/kill/${pid}`, { method: 'POST' })
       const result = await res.json()
       if(res.ok) {
         showToast("Success", result.message, "success")
@@ -87,7 +89,7 @@ const killPortProcess = (pid) => {
 const pollScan = async () => {
   if (!currentScanJobId) return
   try {
-    const res = await fetch(`${getActiveServerUrl()}/api/ports/scan/${currentScanJobId}`)
+    const res = await apiFetch(`${getActiveServerUrl()}/api/ports/scan/${currentScanJobId}`)
     const job = await res.json()
     
     if (job.status === 'done' || job.status === 'failed') {
@@ -165,7 +167,9 @@ onUnmounted(() => {
         </div>
         <div class="flex gap-2">
           <input v-model="scanTarget" type="text" placeholder="IP / localhost" class="input-field flex-1" :disabled="isScanning">
-          <button @click="startScan" class="btn-outline whitespace-nowrap" :disabled="isScanning">Run Scan</button>
+          <button @click="startScan" class="btn-primary whitespace-nowrap" :disabled="isScanning">
+            <Radar class="w-4 h-4" /> {{ isScanning ? 'Scanning...' : 'Run Scan' }}
+          </button>
         </div>
         <div class="mt-2 text-sm" :class="scanResult ? 'text-green-600' : 'text-slate-600'">{{ scanStatusMsg }}</div>
         <pre v-if="scanResult" class="mt-3 bg-slate-900 text-slate-50 p-3 rounded text-xs overflow-x-auto">{{ scanResult }}</pre>
@@ -191,8 +195,8 @@ onUnmounted(() => {
               <td class="table-td font-mono text-xs">{{ port.local_address }}</td>
               <td class="table-td text-xs truncate max-w-[200px]" :title="port.process">{{ port.process }}</td>
               <td class="table-td text-right">
-                <button v-if="extractPid(port.process)" @click="killPortProcess(extractPid(port.process))" class="p-1 hover:bg-red-50 text-red-600 rounded" title="Kill Process">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></svg>
+                <button v-if="extractPid(port.process)" @click="killPortProcess(extractPid(port.process))" class="btn-icon-red" title="Kill Process">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></svg>
                 </button>
               </td>
             </tr>
