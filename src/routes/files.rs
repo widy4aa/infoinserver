@@ -4,7 +4,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::process::Command;
 use tokio::fs::File;
@@ -152,4 +152,179 @@ pub async fn fetch_url_handler(Json(payload): Json<FetchUrlRequest>) -> Result<J
     } else {
         Err((StatusCode::INTERNAL_SERVER_ERROR, "Wget failed to download the file. Ensure the URL is valid and wget is installed.".to_string()))
     }
+}
+// struct tambahan untuk File Actions
+#[derive(Deserialize)]
+pub struct FileActionRequest {
+    pub action: String, // "rename", "move", "copy", "delete", "compress", "extract", "chmod"
+    pub target: String, // File atau folder utama
+    pub destination: Option<String>, // Nama baru (rename), atau path tujuan (move/copy), atau nama file zip (compress)
+    pub password: Option<String>, // Untuk extract zip
+}
+
+#[derive(Deserialize)]
+pub struct FileTextRequest {
+    pub path: String,
+    pub content: Option<String>, // Jika ada isinya, berarti WRITE. Jika kosong, berarti READ.
+}
+pub async fn file_action_handler(Json(payload): Json<FileActionRequest>) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let base_root = env::var("FILE_ROOT").unwrap_or_default();
+    
+    // Resolve target path (selalu diperlukan)
+    let valid_target = resolve_and_validate_path(&base_root, &payload.target)
+        .map_err(|e| (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))))?;
+
+    // Beberapa action butuh destination
+    let valid_dest = if let Some(dest) = &payload.destination {
+        if payload.action == "rename" {
+            // Rename hanya merubah nama file di directory yang sama
+            let parent = valid_target.parent().unwrap();
+            let new_path = parent.join(dest);
+            // Cegah path traversal pada nama baru
+            if dest.contains('/') || dest.contains('\\') || dest.contains("..") {
+                return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Invalid rename destination"}))));
+            }
+            Some(new_path)
+        } else if payload.action == "chmod" {
+            // Destination dipakai untuk string permissions, bukan path
+            None
+        } else {
+            // Move, Copy, Compress, Extract butuh absolute path resolve
+            let res = resolve_and_validate_path(&base_root, dest)
+                .map_err(|e| (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))))?;
+            Some(res)
+        }
+    } else {
+        None
+    };
+
+    let action_str = payload.action.as_str();
+
+    let output = match action_str {
+        "rename" | "move" => {
+            let dest = valid_dest.ok_or((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Destination required"}))))?;
+            Command::new("mv").arg(&valid_target).arg(&dest).output()
+        },
+        "copy" => {
+            let dest = valid_dest.ok_or((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Destination required"}))))?;
+            Command::new("cp").arg("-r").arg(&valid_target).arg(&dest).output()
+        },
+        "delete" => {
+            // rm -rf sangat berbahaya, pastikan target aman
+            Command::new("rm").arg("-rf").arg(&valid_target).output()
+        },
+        "chmod" => {
+            let perms = payload.destination.as_deref().unwrap_or("");
+            if !perms.chars().all(|c| c.is_ascii_digit()) || perms.is_empty() {
+                return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Invalid permissions format (e.g. 755)"}))));
+            }
+            Command::new("chmod").arg(perms).arg(&valid_target).output()
+        },
+        "compress" => {
+            let dest = valid_dest.ok_or((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Destination zip file required"}))))?;
+            let parent_dir = valid_target.parent().unwrap();
+            let file_name = valid_target.file_name().unwrap();
+            
+            // cd ke parent dir agar path di zip relatif
+            Command::new("zip")
+                .current_dir(parent_dir)
+                .arg("-r")
+                .arg(&dest)
+                .arg(file_name)
+                .output()
+        },
+        "extract" => {
+            let dest = valid_dest.ok_or((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Destination folder required"}))))?;
+            let mut cmd = Command::new("unzip");
+            
+            if let Some(pass) = &payload.password {
+                if !pass.is_empty() {
+                    cmd.arg("-P").arg(pass);
+                }
+            }
+            
+            cmd.arg(&valid_target).arg("-d").arg(&dest).output()
+        },
+        _ => return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Invalid action"})))),
+    };
+
+    let result = output.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to spawn command: {}", e)}))))?;
+
+    if result.status.success() {
+        Ok(Json(serde_json::json!({
+            "status": "success",
+            "message": format!("Action '{}' completed successfully", action_str)
+        })))
+    } else {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Command failed: {}", stderr)}))))
+    }
+}
+
+pub async fn text_file_handler(Json(payload): Json<FileTextRequest>) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let base_root = env::var("FILE_ROOT").unwrap_or_default();
+    
+    let valid_path = resolve_and_validate_path(&base_root, &payload.path)
+        .map_err(|e| (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))))?;
+
+    if valid_path.is_dir() {
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Cannot open a directory as text"}))));
+    }
+
+    if let Some(content) = payload.content {
+        // WRITE Mode
+        tokio::fs::write(&valid_path, content).await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to write file: {}", e)}))))?;
+            
+        Ok(Json(serde_json::json!({
+            "status": "success",
+            "message": "File saved successfully"
+        })))
+    } else {
+        // READ Mode
+        let text = tokio::fs::read_to_string(&valid_path).await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to read file (might be binary): {}", e)}))))?;
+            
+        Ok(Json(serde_json::json!({
+            "status": "success",
+            "content": text
+        })))
+    }
+}
+
+#[derive(Serialize)]
+pub struct DetailedFileInfo {
+    pub path: String,
+    pub name: String,
+    pub is_dir: bool,
+    pub size_bytes: u64,
+    pub permissions_octal: String, // e.g. "0755"
+}
+
+pub async fn file_info_handler(Query(query): Query<FileQuery>) -> Result<Json<DetailedFileInfo>, (StatusCode, Json<serde_json::Value>)> {
+    let base_root = env::var("FILE_ROOT").unwrap_or_default();
+    let req_path = query.path.unwrap_or_default();
+
+    if req_path.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Path parameter is required"}))));
+    }
+
+    let valid_path = resolve_and_validate_path(&base_root, &req_path)
+        .map_err(|e| (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))))?;
+
+    let metadata = tokio::fs::metadata(&valid_path).await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Cannot read metadata: {}", e)}))))?;
+
+    use std::os::unix::fs::PermissionsExt;
+    let mode = metadata.permissions().mode();
+    // Ambil 3 digit terakhir (e.g. 755 dari 33261)
+    let permissions_octal = format!("{:04o}", mode & 0o7777);
+
+    Ok(Json(DetailedFileInfo {
+        path: req_path,
+        name: valid_path.file_name().unwrap_or_default().to_string_lossy().to_string(),
+        is_dir: metadata.is_dir(),
+        size_bytes: metadata.len(),
+        permissions_octal,
+    }))
 }

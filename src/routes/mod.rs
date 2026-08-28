@@ -1,4 +1,3 @@
-pub mod system;
 pub mod network;
 pub mod ports;
 pub mod podman;
@@ -18,3 +17,7 @@ pub mod auth;
 pub mod metrics_ws;
 pub mod metrics_history;
 pub mod logs;
+pub mod users_mgmt;
+pub mod services_mgmt;
+pub mod syslogs;
+pub mod cron_mgmt;

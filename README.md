@@ -1,46 +1,52 @@
 # Server Monitoring Dashboard
 
-A lightweight, self-hosted server monitoring dashboard with a **Rust backend** (Axum + Tokio) and a **Vue.js frontend**. Built for Linux bare-metal servers — reads metrics directly from the kernel (`/proc`, `/sys`) like Node Exporter, streams real-time data via WebSocket, and secured with PAM-based OS authentication + JWT session tokens.
+A lightweight, self-hosted server monitoring & administration dashboard. Powered by a **Rust backend** (Axum + Tokio) and a **Vue.js frontend**. Built specifically for Linux bare-metal servers — it reads metrics directly from the kernel (`/proc`, `/sys`) just like Node Exporter, streams real-time data via WebSocket, and is secured natively with PAM-based OS authentication and JWT session tokens.
 
 ---
 
 ## Features
 
 ### System Monitoring
-- **Real-time Metrics via WebSocket** — CPU usage, RAM, Uptime, OS, and Kernel info streamed live (no polling).
-- **Historical Performance Charts** — CPU, RAM, and Disk usage recorded every 5 minutes to SQLite and displayed as interactive line charts (24h, 12h, 1h, 30m, 10m, 5m range selector).
+- **Real-time Metrics via WebSocket** — CPU usage, RAM, Uptime, OS, and Kernel info streamed live without polling overhead.
+- **Historical Performance Charts** — CPU, RAM, Disk, and Network (Mbps) usage recorded every 5 minutes to SQLite, displayed as interactive line charts with a customizable time range (24h, 12h, 6h, 3h, 1h).
 - **Storage (Disks)** — Per-mount-point disk usage with progress bars.
+
+### System Administration
 - **Top Processes** — Live process list sortable by CPU or RAM, with keyword/PID search and force-kill support.
-
-### Network & Security
-- **Network Interfaces** — Active interfaces, MAC address, RX/TX traffic in MB.
-- **Listening Ports** — All locally listening ports and their associated processes via `ss`, with kill-process action.
-- **Deep Port Scan** — On-demand async port scanning via `nmap` with background job queue.
-- **UFW Firewall** — View status, toggle enable/disable, add/deny rules.
-
-### Container Management
-- **Podman Integration** — List containers, view status, Start / Stop / Restart / Delete, and deploy new containers from the UI.
+- **Systemd Services** — Full UI to manage background services/daemons. Start, Stop, Restart, Enable (auto-start), Disable, and search through loaded units.
+- **System Journal Viewer** — A native-looking console for `journalctl` logs. Features syntax highlighting (colors for hostname, service, errors/warnings) and filtering by Auth (SSH) or Kernel (dmesg).
+- **Cronjob Manager** — Read, add, edit, and delete scheduled tasks for the `root` user (`/etc/crontab`) via a clean UI.
+- **Users & Groups** — Create Linux users, change passwords, assign secondary groups, and delete users (including home directories). Filter out system users dynamically.
 
 ### File Management
-- **File Explorer** — Sandboxed web file browser (scoped to `FILE_ROOT`). View, download, upload files, and fetch remote URLs via `wget`. Protected against Path Traversal attacks.
+- **Advanced File Explorer** — Sandboxed web file browser (scoped to `FILE_ROOT`). 
+- **Context Menu Actions (Right-Click)**:
+  - Copy, Move, Rename, Delete files/folders.
+  - **Compress to Zip** & **Extract Zip** (with password support).
+  - **Permissions (chmod)**: Change file access rights instantly (e.g., 0755, 0644).
+  - **Open as Text**: A built-in code editor to view and edit text files directly from the browser.
+- **Remote Fetch**: Download files from the internet directly to the server via `wget`.
 
-### Developer Tools
-- **Multi-Tab Root Terminal** — Native PTY shell via WebSocket (`xterm.js`). Multiple tabs, each with its own independent shell session.
+### Network & Security
+- **Network Interfaces** — Active interfaces, MAC addresses, and RX/TX traffic.
+- **Listening Ports** — All locally listening ports and their associated processes via `ss`, with kill-process action.
+- **Deep Port Scan** — On-demand async port scanning via `nmap` with a background job queue.
+- **UFW Firewall** — View firewall status, toggle enable/disable, and manage allow/deny rules.
+
+### Container & Network Tools
+- **Podman Integration** — List containers, view status, Start / Stop / Restart / Delete, and deploy new containers from the UI.
 - **Cloudflare Integration** — Manage Cloudflare tunnels (Quick Tunnel & Managed Tunnel with token) and Zero Trust ingress routes via API.
-- **Speedtest** — Scheduled (hourly) and on-demand network speed testing via `speedtest-cli`. Results stored and displayed in history table.
+- **Speedtest** — Scheduled (hourly) and on-demand network speed testing via `speedtest-cli`.
 
-### Activity Logs & Alerts
-- **Automatic Alerts** — Background scheduler detects anomalies and writes to `activity_log` table:
-  - CPU usage > 90%
-  - RAM usage > 90%
-  - Disk free space < 10%
-- **Logs & Alerts tab** — View all recorded alerts with severity levels (INFO / WARNING / CRITICAL).
+### Developer Tools & Alerts
+- **Multi-Tab Root Terminal** — Native PTY shell via WebSocket (`xterm.js`). Supports multiple tabs, each with its own independent shell session that runs safely in the background.
+- **Activity Logs & Alerts** — Background scheduler detects anomalies (CPU > 90%, RAM > 90%, Disk free space < 10%) and writes to an `activity_log` table with severity levels (INFO / WARNING / CRITICAL).
 
-### Security
-- **PAM Authentication** — Login uses the server's actual Linux OS credentials (username + password verified via `libpam`). No separate user management needed.
-- **JWT Session Tokens** — After login, a signed JWT is issued (valid for 24h). All API endpoints are protected.
-- **Per-Server Sessions** — Each server in the dashboard has its own login session, stored in `sessionStorage` (cleared when browser tab closes or user navigates back to Home).
-- **Sudo Injection** — Commands requiring elevated privileges (`kill`, `reboot`, UFW) use the user's authenticated password injected via `sudo -S` stdin — never stored on disk.
+### Security Architecture
+- **PAM Authentication** — Login uses the server's actual Linux OS credentials (verified via `libpam` against `/etc/shadow`). No separate dashboard user management is needed.
+- **JWT Session Tokens** — After a successful login, a signed JWT is issued. All API endpoints are heavily protected.
+- **In-Memory Sessions** — Each server in the dashboard has its own login session, stored strictly in memory (`sessionStorage`). Sessions are cleared when the browser tab closes or when the user navigates back to the Server List.
+- **Sudo Injection** — Commands requiring elevated privileges (`kill`, `systemctl`, `reboot`, `ufw`, `useradd`) securely use the user's authenticated password injected via `sudo -S` stdin — the password is never stored on disk or logged.
 
 ---
 
@@ -49,16 +55,16 @@ A lightweight, self-hosted server monitoring dashboard with a **Rust backend** (
 | Layer | Technology |
 |---|---|
 | **Backend** | Rust, Axum 0.8, Tokio, SQLx (SQLite), portable-pty |
-| **Metrics Source** | `/proc/stat`, `/proc/meminfo`, `/proc/uptime`, `/proc/mounts`, `statvfs()` (no sysinfo for metrics) |
-| **Auth** | PAM (`libpam`), JWT (`jsonwebtoken`) |
-| **Frontend** | Vue 3, Vite, Tailwind CSS v4, Chart.js, xterm.js |
+| **Metrics Source** | `/proc/stat`, `/proc/meminfo`, `/proc/uptime`, `/proc/mounts`, `/proc/net/dev`, `statvfs()` |
+| **Auth & Security** | PAM (`libpam`), JWT (`jsonwebtoken`) |
+| **Frontend** | Vue 3, Vite, Tailwind CSS v4, Chart.js, xterm.js, Lucide Icons |
 | **Deployment** | Backend: bare-metal binary · Frontend: Nginx via Docker/Podman Compose |
 
 ---
 
 ## OS Support
 
-Designed specifically for **Linux** environments due to direct `/proc` and `/sys` filesystem access.
+Designed specifically for **Linux** environments due to direct `/proc` and `/sys` filesystem access, as well as Linux-specific tools like systemctl, journalctl, and UFW.
 
 | Distro | Status |
 |---|---|
@@ -75,17 +81,17 @@ Designed specifically for **Linux** environments due to direct `/proc` and `/sys
 
 ```bash
 # Arch Linux / CachyOS / Manjaro
-sudo pacman -S rustup libpam
+sudo pacman -S rustup pam zip unzip
 rustup default stable
 sudo pacman -S iproute2 podman nmap wget ufw speedtest-cli
 
 # Ubuntu / Debian
-sudo apt install curl build-essential libpam0g-dev
+sudo apt install curl build-essential libpam0g-dev zip unzip
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 sudo apt install iproute2 podman nmap wget ufw speedtest-cli
 ```
 
-> **Note:** `libpam-dev` / `libpam0g-dev` is required to compile the PAM authentication module.
+> **Note:** `libpam0g-dev` is required to compile the PAM authentication module. `zip` and `unzip` are required for File Explorer archive actions.
 
 ### Frontend Host
 
@@ -100,21 +106,18 @@ docker --version   # or: podman --version
 
 ```
 ┌─────────────────────────────────────┐    ┌────────────────────────────────┐
-│        Frontend (Vue.js SPA)        │    │     Backend Agent (Rust)        │
-│  Hosted anywhere via Nginx/Podman   │◄──►│  Must run on bare-metal Linux   │
-│  http://your-dashboard-host:3000    │    │  http://<SERVER_IP>:8080        │
+│        Frontend (Vue.js SPA)        │    │     Backend Agent (Rust)       │
+│  Hosted anywhere via Nginx/Podman   │◄──►│  Must run on bare-metal Linux  │
+│  http://your-dashboard-host:3000    │    │  http://<SERVER_IP>:8080       │
 └─────────────────────────────────────┘    └────────────────────────────────┘
                                                         │
                                                 Reads from kernel:
-                                                /proc/stat
-                                                /proc/meminfo
-                                                /proc/uptime
-                                                /proc/mounts
-                                                /proc/net/dev
-                                                /sys/class/net/
+                                                /proc/stat, /proc/meminfo
+                                                /proc/net/dev, /etc/passwd
+                                                Execute: systemctl, journalctl
 ```
 
-The frontend is a standard SPA that can be hosted anywhere (even a different server or country). You can add **multiple Backend Agent IPs** into a single Frontend dashboard.
+The frontend is a standard Single Page Application (SPA) that can be hosted anywhere. You can add **multiple Backend Agent IPs** into a single Frontend dashboard to manage a fleet of servers.
 
 ---
 
@@ -126,10 +129,8 @@ The frontend is a standard SPA that can be hosted anywhere (even a different ser
 PORT=8080
 FILE_ROOT=/home/user/Documents
 DB_PATH=sqlite:./data.db
-JWT_SECRET=your-random-secret-string-here
+JWT_SECRET=your-random-super-strong-secret-string-here
 ```
-
-> **Important:** Set a strong `JWT_SECRET`. This is used to sign all session tokens. Without it, a default insecure value is used.
 
 ### 2. Build & Run
 
@@ -138,7 +139,7 @@ chmod +x start.sh
 ./start.sh
 ```
 
-This script runs `cargo build --release` and spawns the backend daemon in the background. Logs are written to `server.log`.
+This script automatically runs `cargo build --release` and spawns the backend daemon in the background. Logs are written to `server.log`. Database migrations are applied automatically.
 
 ---
 
@@ -146,11 +147,11 @@ This script runs `cargo build --release` and spawns the backend daemon in the ba
 
 ### Via Podman Compose (Recommended)
 
-```bash
-# Build and run
-podman compose up -d --build
+From the project root directory:
 
-# Or using Docker
+```bash
+podman compose up -d --build
+# or using Docker
 docker compose up -d --build
 ```
 
@@ -171,34 +172,10 @@ npm run dev
 1. Open the dashboard and click **"Add Server"** (top right of Home page).
 2. Fill in:
    - **Server Alias** — A friendly name (e.g. "VPS Singapore")
-   - **Backend IP / URL** — Just enter the IP:Port (e.g. `100.127.55.109:8080`). `http://` is added automatically.
-   - **Username** — Your Linux OS username on that server.
+   - **Backend IP / URL** — Just enter the IP:Port (e.g. `100.127.55.109:8080`).
+   - **Username** — Your Linux OS username on that server (must have sudo privileges for full features).
    - **Password** — Your Linux OS password.
-3. Click **"Add & Login"** — The dashboard will authenticate against the server's PAM system immediately. If successful, you're redirected to the server dashboard.
-
----
-
-## Database Schema
-
-The backend uses SQLite (`data.db`) with the following tables:
-
-| Table | Purpose |
-|---|---|
-| `system_metrics_history` | CPU, RAM, Disk usage recorded every 5 minutes for historical charts |
-| `activity_log` | Automatic alerts (High CPU/RAM, Low Disk) with severity levels |
-| `speedtest_history` | Network speed test results (scheduled hourly + on-demand) |
-| `port_scan_jobs` | Async nmap scan jobs with status tracking |
-
-The database is **auto-created and migrated** on first run. Incremental migrations (ALTER TABLE) are applied automatically if columns are missing.
-
----
-
-## Security Notes
-
-- All `/api/*` endpoints require a valid JWT token in the `Authorization: Bearer` header, **except** `/api/auth/login`.
-- WebSocket endpoints (`/api/terminal/ws`, `/api/metrics/ws`) accept the token via query parameter `?token=...` since browsers cannot set custom headers on WebSocket connections.
-- The backend **never logs passwords**. The user's password is held in RAM only for the duration of a `sudo` call, never written to disk.
-- **Do NOT expose this dashboard directly to the public internet without a reverse proxy.** Always run behind Nginx/Caddy with SSL/TLS.
+3. Click **"Add & Login"** — The dashboard authenticates against the server's PAM system immediately. If successful, you are securely logged in and redirected to the server dashboard.
 
 ---
 

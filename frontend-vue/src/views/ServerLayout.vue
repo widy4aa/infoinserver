@@ -4,7 +4,7 @@ import { useServerStore } from '../stores/serverStore'
 import { onMounted, onUnmounted, ref } from 'vue'
 import NativeTerminal from '../components/NativeTerminal.vue'
 import LoginModal from '../components/LoginModal.vue'
-import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle } from 'lucide-vue-next'
+import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle, Users, PowerSquare, ScrollText, Clock } from 'lucide-vue-next'
 
 const route = useRoute()
 const { setActiveServer, servers, isAuthenticated, getUsername, clearToken } = useServerStore()
@@ -82,28 +82,40 @@ onUnmounted(() => {
       </div>
 
       <!-- Feature Tabs -->
-      <div class="px-2 pb-0 pt-2 bg-white overflow-x-auto">
-        <nav class="flex space-x-1 sm:space-x-4 min-w-max pb-[2px]" aria-label="Tabs">
+      <div class="px-3 pb-1 pt-2 bg-white border-t border-slate-100">
+        <nav class="flex flex-wrap gap-x-2 sm:gap-x-4 gap-y-1" aria-label="Tabs">
           <RouterLink :to="`/server/${currentServer.id}/dashboard`" class="tab-item" active-class="tab-active">
             <LayoutDashboard class="w-4 h-4" /> System
           </RouterLink>
           <RouterLink :to="`/server/${currentServer.id}/speedtest`" class="tab-item" active-class="tab-active">
             <Activity class="w-4 h-4" /> Speedtest
           </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/ports`" class="tab-item" active-class="tab-active">
-            <ShieldCheck class="w-4 h-4" /> Network &amp; Security
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/podman`" class="tab-item" active-class="tab-active">
-            <Box class="w-4 h-4" /> Containers
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/cloudflare`" class="tab-item" active-class="tab-active">
-            <Cloud class="w-4 h-4" /> Cloudflare
+          <RouterLink :to="`/server/${currentServer.id}/services`" class="tab-item" active-class="tab-active">
+            <PowerSquare class="w-4 h-4" /> Services
           </RouterLink>
           <RouterLink :to="`/server/${currentServer.id}/files`" class="tab-item" active-class="tab-active">
             <FolderTree class="w-4 h-4" /> File Explorer
           </RouterLink>
+          <RouterLink :to="`/server/${currentServer.id}/podman`" class="tab-item" active-class="tab-active">
+            <Box class="w-4 h-4" /> Containers
+          </RouterLink>
+          <RouterLink :to="`/server/${currentServer.id}/users`" class="tab-item" active-class="tab-active">
+            <Users class="w-4 h-4" /> Users &amp; Groups
+          </RouterLink>
+          <RouterLink :to="`/server/${currentServer.id}/ports`" class="tab-item" active-class="tab-active">
+            <ShieldCheck class="w-4 h-4" /> Network &amp; Security
+          </RouterLink>
+          <RouterLink :to="`/server/${currentServer.id}/cloudflare`" class="tab-item" active-class="tab-active">
+            <Cloud class="w-4 h-4" /> Cloudflare
+          </RouterLink>
+          <RouterLink :to="`/server/${currentServer.id}/cron`" class="tab-item" active-class="tab-active">
+            <Clock class="w-4 h-4" /> Cronjobs
+          </RouterLink>
+          <RouterLink :to="`/server/${currentServer.id}/syslogs`" class="tab-item" active-class="tab-active">
+            <ScrollText class="w-4 h-4" /> Syslogs
+          </RouterLink>
           <RouterLink :to="`/server/${currentServer.id}/logs`" class="tab-item" active-class="tab-active">
-            <AlertCircle class="w-4 h-4" /> Logs &amp; Alerts
+            <AlertCircle class="w-4 h-4" /> Alerts
           </RouterLink>
           <RouterLink :to="`/server/${currentServer.id}/settings`" class="tab-item" active-class="tab-active">
             <Settings class="w-4 h-4" /> Config

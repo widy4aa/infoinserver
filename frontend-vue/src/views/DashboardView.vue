@@ -2,8 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
-import { useToastStore } from '../stores/toastStore'
-import { Cpu, Loader2, Activity, Clock, Search, ArrowDownUp } from 'lucide-vue-next'
+import { Cpu, Loader2, Activity, Clock } from 'lucide-vue-next'
 
 import {
   Chart as ChartJS,
@@ -31,38 +30,15 @@ ChartJS.register(
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl, getToken, activeServerId } = useServerStore()
-const { showConfirm, showToast } = useToastStore()
 
 const sysInfo = ref(null)
-const processes = ref([])
 const error = ref(null)
 let ws = null
-
-// Process Filtering & Sorting
-const processSearchQuery = ref('')
-const processSortBy = ref('cpu') // 'cpu' or 'ram'
-
-const filteredAndSortedProcesses = computed(() => {
-  let result = [...processes.value]
-  
-  if (processSearchQuery.value) {
-    const q = processSearchQuery.value.toLowerCase()
-    result = result.filter(p => p.name.toLowerCase().includes(q) || p.pid.toString().includes(q))
-  }
-  
-  if (processSortBy.value === 'cpu') {
-    result.sort((a, b) => b.cpu_usage - a.cpu_usage)
-  } else if (processSortBy.value === 'ram') {
-    result.sort((a, b) => b.memory_bytes - a.memory_bytes)
-  }
-  
-  return result
-})
 
 // History Data
 const historyData = ref([])
 const fullHistoryData = ref([]) // Menyimpan data utuh dari API
-const historyTimeRange = ref('24h') // '24h', '12h', '1h', '30m', '10m', '5m'
+const historyTimeRange = ref('24h') // '24h', '12h', '6h', '3h', '1h'
 
 const filterHistoryByTime = (range) => {
   if (!fullHistoryData.value || fullHistoryData.value.length === 0) return []
@@ -71,10 +47,9 @@ const filterHistoryByTime = (range) => {
   let limitTime = new Date()
   
   switch(range) {
-    case '5m': limitTime.setMinutes(now.getMinutes() - 5); break;
-    case '10m': limitTime.setMinutes(now.getMinutes() - 10); break;
-    case '30m': limitTime.setMinutes(now.getMinutes() - 30); break;
     case '1h': limitTime.setHours(now.getHours() - 1); break;
+    case '3h': limitTime.setHours(now.getHours() - 3); break;
+    case '6h': limitTime.setHours(now.getHours() - 6); break;
     case '12h': limitTime.setHours(now.getHours() - 12); break;
     case '24h': default: limitTime.setHours(now.getHours() - 24); break;
   }
@@ -99,7 +74,6 @@ const connectWebSocket = () => {
       const data = JSON.parse(event.data)
       if (data.type === 'metrics_update') {
         sysInfo.value = data.system
-        processes.value = data.processes
         error.value = null
       }
     } catch (e) {
@@ -112,7 +86,6 @@ const connectWebSocket = () => {
   }
 
   ws.onclose = () => {
-    // Reconnect hanya jika ws masih merujuk ke instance yang sama (tidak di-null-kan oleh unmount)
     if (ws) {
       setTimeout(() => {
         if (ws) connectWebSocket()
@@ -126,27 +99,11 @@ const fetchHistory = async () => {
     const res = await apiFetch(`${getActiveServerUrl()}/api/metrics/history`)
     if (res.ok) {
       fullHistoryData.value = await res.json()
-      // Filter dengan range aktif
       historyData.value = filterHistoryByTime(historyTimeRange.value)
     }
   } catch (e) {
     console.error("Failed to fetch metrics history", e)
   }
-}
-
-const killProcess = (pid) => {
-  showConfirm("Konfirmasi", `Kill process PID ${pid}?`, async () => {
-    try {
-      const res = await apiFetch(`${getActiveServerUrl()}/api/process/kill/${pid}`, { method: 'POST' })
-      if(res.ok) {
-        showToast("Success", `Process ${pid} killed`, "success")
-      } else {
-        showToast("Error", "Failed to kill process", "error")
-      }
-    } catch(e) {
-      showToast("Error", e.message, "error")
-    }
-  })
 }
 
 const formatUptime = (seconds) => {
@@ -243,7 +200,7 @@ const memChartData = computed(() => {
 const diskChartData = computed(() => {
   const labels = historyData.value.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
   const data = historyData.value.map(d => {
-    if (!d.disk_total_bytes || d.disk_total_bytes === 0) return 0
+    if (!d || !d.disk_total_bytes || d.disk_total_bytes === 0) return 0
     return ((d.disk_used_bytes / d.disk_total_bytes) * 100).toFixed(1)
   })
   
@@ -261,6 +218,62 @@ const diskChartData = computed(() => {
   }
 })
 
+const netChartData = computed(() => {
+  if (historyData.value.length < 2) return { labels: [], datasets: [] }
+  
+  const labels = []
+  const rxData = []
+  const txData = []
+
+  for (let i = 1; i < historyData.value.length; i++) {
+    const prev = historyData.value[i - 1]
+    const curr = historyData.value[i]
+    
+    const prevRx = prev.net_rx_bytes || 0
+    const prevTx = prev.net_tx_bytes || 0
+    const currRx = curr.net_rx_bytes || 0
+    const currTx = curr.net_tx_bytes || 0
+
+    const timeDiffSec = (new Date(curr.timestamp) - new Date(prev.timestamp)) / 1000
+    
+    let rxMbps = 0
+    let txMbps = 0
+    
+    if (timeDiffSec > 0 && currRx >= prevRx && currTx >= prevTx) {
+      const rxBytesPerSec = (currRx - prevRx) / timeDiffSec
+      const txBytesPerSec = (currTx - prevTx) / timeDiffSec
+      rxMbps = (rxBytesPerSec * 8) / 1000000
+      txMbps = (txBytesPerSec * 8) / 1000000
+    }
+
+    labels.push(new Date(curr.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+    rxData.push(rxMbps.toFixed(2))
+    txData.push(txMbps.toFixed(2))
+  }
+  
+  return {
+    labels,
+    datasets: [
+      {
+        label: 'Download (Mbps)',
+        data: rxData,
+        borderColor: '#10b981', // emerald
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        tension: 0.4
+      },
+      {
+        label: 'Upload (Mbps)',
+        data: txData,
+        borderColor: '#ef4444', // red
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        tension: 0.4
+      }
+    ]
+  }
+})
+
 onMounted(() => {
   connectWebSocket()
   fetchHistory()
@@ -269,7 +282,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (ws) {
     const socket = ws
-    ws = null // Null-kan referensi agar onclose tidak mencoba reconnect
+    ws = null
     socket.close()
   }
 })
@@ -281,11 +294,10 @@ onUnmounted(() => {
       Error connecting to backend: {{ error }}. Check Settings tab.
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Menghilangkan grid layout kolom kanan, gunakan 1 kolom utama -->
+    <div class="flex flex-col gap-6">
       
-      <!-- System Info (Left side, takes 2 cols on lg) -->
-      <section class="space-y-6 lg:col-span-2">
-        
+      <section class="flex flex-col gap-6">
         <!-- Live System Resources -->
         <div class="card">
           <h2 class="card-title"><Cpu class="w-5 h-5 text-brand-500" /> System Resources</h2>
@@ -294,8 +306,8 @@ onUnmounted(() => {
             <Loader2 class="w-4 h-4 animate-spin" /> Loading metrics...
           </div>
 
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div class="p-4 bg-slate-50 rounded-lg border border-slate-100">
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 items-stretch">
+            <div class="p-4 bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center">
               <div class="text-sm font-medium text-slate-500 mb-1">Hostname &amp; OS</div>
               <div class="font-semibold text-slate-800 flex items-center gap-2">
                 {{ sysInfo.hostname }}
@@ -307,7 +319,7 @@ onUnmounted(() => {
               <div class="text-xs text-slate-500 mt-1">{{ sysInfo.os_name }} • {{ sysInfo.kernel_version }}</div>
             </div>
             
-            <div class="p-4 bg-green-50 rounded-lg border border-green-100">
+            <div class="p-4 bg-green-50 rounded-lg border border-green-100 flex flex-col justify-center">
               <div class="text-sm font-medium text-green-600 mb-1">Uptime</div>
               <div class="font-bold text-green-700 text-lg">{{ formatUptime(sysInfo.uptime) }}</div>
             </div>
@@ -370,18 +382,18 @@ onUnmounted(() => {
             <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg">
               <button @click="setTimeRange('24h')" :class="historyTimeRange === '24h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">24h</button>
               <button @click="setTimeRange('12h')" :class="historyTimeRange === '12h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">12h</button>
+              <button @click="setTimeRange('6h')" :class="historyTimeRange === '6h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">6h</button>
+              <button @click="setTimeRange('3h')" :class="historyTimeRange === '3h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">3h</button>
               <button @click="setTimeRange('1h')" :class="historyTimeRange === '1h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">1h</button>
-              <button @click="setTimeRange('30m')" :class="historyTimeRange === '30m' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">30m</button>
-              <button @click="setTimeRange('10m')" :class="historyTimeRange === '10m' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">10m</button>
-              <button @click="setTimeRange('5m')" :class="historyTimeRange === '5m' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">5m</button>
             </div>
           </div>
           
-          <div v-if="historyData.length === 0" class="flex flex-col items-center justify-center p-8 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+          <div v-if="historyData.length < 2" class="flex flex-col items-center justify-center p-8 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
             <Clock class="w-8 h-8 mb-2 opacity-50 text-slate-400" />
-            <p class="text-sm">No data available for the selected time range ({{ historyTimeRange }}).</p>
+            <p class="text-sm">Not enough data available for the selected time range ({{ historyTimeRange }}).</p>
+            <p class="text-xs mt-1">Chart requires at least 2 data points (10 minutes of recording).</p>
           </div>
-          <div v-else class="grid grid-cols-1 gap-6">
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- CPU Chart -->
             <div class="h-48 relative w-full">
               <h3 class="text-sm font-semibold text-slate-700 mb-2">CPU Usage</h3>
@@ -391,7 +403,7 @@ onUnmounted(() => {
             </div>
             
             <!-- Mem Chart -->
-            <div class="h-48 relative w-full mt-4">
+            <div class="h-48 relative w-full">
               <h3 class="text-sm font-semibold text-slate-700 mb-2">Memory Usage</h3>
               <div class="absolute inset-0 top-8">
                 <Line :data="memChartData" :options="{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, max: 100 } } }" />
@@ -399,10 +411,18 @@ onUnmounted(() => {
             </div>
             
             <!-- Disk Chart -->
-            <div class="h-48 relative w-full mt-4">
-              <h3 class="text-sm font-semibold text-slate-700 mb-2">Disk Usage (Aggregated)</h3>
+            <div class="h-48 relative w-full">
+              <h3 class="text-sm font-semibold text-slate-700 mb-2">Disk Usage</h3>
               <div class="absolute inset-0 top-8">
                 <Line :data="diskChartData" :options="{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, max: 100 } } }" />
+              </div>
+            </div>
+            
+            <!-- Network Bandwidth Chart -->
+            <div class="h-48 relative w-full">
+              <h3 class="text-sm font-semibold text-slate-700 mb-2">Network (Mbps)</h3>
+              <div class="absolute inset-0 top-8">
+                <Line :data="netChartData" :options="{ ...chartOptions, plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 10, usePointStyle: true, font: {size: 10} } }, tooltip: chartOptions.plugins.tooltip }, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, max: undefined, ticks: { ...chartOptions.scales.y.ticks, callback: (v) => v + ' Mbps' } } } }" />
               </div>
             </div>
           </div>
@@ -415,43 +435,7 @@ onUnmounted(() => {
 
       </section>
 
-      <!-- Task Manager (Right side, takes 1 col) -->
-      <section class="card lg:col-span-1 flex flex-col h-[calc(100vh-12rem)] sticky top-6">
-        
-        <div class="flex items-center justify-between shrink-0 mb-3">
-          <h2 class="card-title mb-0">Processes</h2>
-          
-          <div class="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md">
-            <button @click="processSortBy = 'cpu'" :class="processSortBy === 'cpu' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-2 py-1 rounded text-[10px] font-bold uppercase transition-all">CPU</button>
-            <button @click="processSortBy = 'ram'" :class="processSortBy === 'ram' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-2 py-1 rounded text-[10px] font-bold uppercase transition-all">RAM</button>
-          </div>
-        </div>
-
-        <div class="relative shrink-0 mb-3">
-          <Search class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input v-model="processSearchQuery" type="text" placeholder="Search PID or Name..." class="w-full bg-slate-50 border border-slate-200 text-sm rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all">
-        </div>
-
-        <div class="overflow-y-auto flex-1 pr-1 space-y-1.5 -mr-1">
-          <div v-for="p in filteredAndSortedProcesses" :key="p.pid" class="flex items-center justify-between p-2 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-100 transition-colors">
-            <div class="flex-1 min-w-0 mr-2">
-              <div class="font-semibold text-[13px] text-slate-700 truncate" :title="p.name">{{ p.name }}</div>
-              <div class="text-[10px] text-slate-400 font-mono mt-0.5">PID: {{ p.pid }}</div>
-            </div>
-            <div class="flex flex-col items-end mr-3 w-16">
-              <span class="text-xs font-bold" :class="processSortBy === 'cpu' ? 'text-brand-600' : 'text-slate-600'">{{ p.cpu_usage.toFixed(1) }}%</span>
-              <span class="text-[10px]" :class="processSortBy === 'ram' ? 'text-purple-600 font-bold' : 'text-slate-500'">{{ (p.memory_bytes/1048576).toFixed(1) }} MB</span>
-            </div>
-            <button @click="killProcess(p.pid)" class="btn-icon-red shrink-0 w-7 h-7" title="Kill Process">
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-            </button>
-          </div>
-          
-          <div v-if="filteredAndSortedProcesses.length === 0" class="text-center py-6 text-slate-400 text-sm">
-            No processes found.
-          </div>
-        </div>
-      </section>
     </div>
   </div>
 </template>
+

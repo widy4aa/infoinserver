@@ -2,7 +2,7 @@ use tokio::time::{interval, Duration};
 use sqlx::SqlitePool;
 use chrono::Utc;
 use crate::services::speedtest_cli::run_speedtest;
-use crate::services::proc_reader::get_system_metrics;
+use crate::services::proc_reader::{get_system_metrics, read_network_interfaces};
 
 pub async fn start_background_tasks(db_pool: SqlitePool) {
     let speedtest_pool = db_pool.clone();
@@ -42,10 +42,21 @@ pub async fn start_background_tasks(db_pool: SqlitePool) {
                 }
             }
 
+            // Hitung agregat network RX dan TX (jumlahkan semua interface)
+            let mut total_rx_bytes: u64 = 0;
+            let mut total_tx_bytes: u64 = 0;
+            let net_ifaces = read_network_interfaces();
+            for iface in net_ifaces {
+                if iface.name != "lo" { // Abaikan loopback
+                    total_rx_bytes += iface.rx_bytes;
+                    total_tx_bytes += iface.tx_bytes;
+                }
+            }
+
             // Insert ke history
             let insert_res = sqlx::query(
-                "INSERT INTO system_metrics_history (timestamp, cpu_usage, mem_used_bytes, mem_total_bytes, disk_used_bytes, disk_total_bytes)
-                 VALUES (?, ?, ?, ?, ?, ?)"
+                "INSERT INTO system_metrics_history (timestamp, cpu_usage, mem_used_bytes, mem_total_bytes, disk_used_bytes, disk_total_bytes, net_rx_bytes, net_tx_bytes)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&now)
             .bind(metrics.global_cpu_usage)
@@ -53,6 +64,8 @@ pub async fn start_background_tasks(db_pool: SqlitePool) {
             .bind(metrics.total_memory as i64)
             .bind(used_disk_bytes as i64)
             .bind(total_disk_bytes as i64)
+            .bind(total_rx_bytes as i64)
+            .bind(total_tx_bytes as i64)
             .execute(&metrics_pool)
             .await;
 

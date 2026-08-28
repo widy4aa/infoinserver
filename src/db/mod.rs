@@ -47,5 +47,18 @@ pub async fn init_db(db_url: &str) -> Result<SqlitePool, sqlx::Error> {
         ).execute(&pool).await;
     }
 
+    // Tambahkan kolom network ke system_metrics_history jika belum ada
+    let net_cols: Vec<(String,)> = sqlx::query_as(
+        "SELECT name FROM pragma_table_info('system_metrics_history') WHERE name = 'net_rx_bytes'"
+    ).fetch_all(&pool).await.unwrap_or_default();
+    if net_cols.is_empty() {
+        let _ = sqlx::query(
+            "ALTER TABLE system_metrics_history ADD COLUMN net_rx_bytes INTEGER DEFAULT 0"
+        ).execute(&pool).await;
+        let _ = sqlx::query(
+            "ALTER TABLE system_metrics_history ADD COLUMN net_tx_bytes INTEGER DEFAULT 0"
+        ).execute(&pool).await;
+    }
+
     Ok(pool)
 }

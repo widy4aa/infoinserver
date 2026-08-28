@@ -11,6 +11,7 @@ pub async fn list_processes_handler(State(state): State<AppState>) -> Json<Vec<P
     Json(procs)
 }
 
+
 pub async fn kill_process_handler(
     Path(pid): Path<String>,
     Extension(auth): Extension<AuthUser>,

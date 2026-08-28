@@ -68,7 +68,7 @@ const handleUpdate = async () => {
   align-items: center;
   gap: 0.5rem;
   white-space: nowrap;
-  padding: 0.75rem 0.75rem;
+  padding: 0.5rem 0.5rem;
   border-bottom-width: 2px;
   font-weight: 500;
   font-size: 0.875rem;
@@ -77,6 +77,7 @@ const handleUpdate = async () => {
   transition-duration: 150ms;
   border-color: transparent;
   color: #64748b;
+  margin-bottom: -1px;
 }
 .tab-item:hover {
   color: #334155;
