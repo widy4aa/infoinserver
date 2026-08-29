@@ -8,6 +8,7 @@ const CONFIG_PATH: &str = "/etc/cloudflared/config.yml";
 /// Representasi ingress rule dari config.yml
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IngressRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
     pub service: String,
 }
@@ -16,6 +17,7 @@ pub struct IngressRule {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LocalTunnelConfig {
     pub tunnel: Option<String>,
+    #[serde(rename = "credentials-file")]
     pub credentials_file: Option<String>,
     pub ingress: Vec<IngressRule>,
 }
@@ -129,7 +131,7 @@ pub async fn add_local_route(
     write_config_file(&password, &new_yaml)?;
 
     // 5. Restart service
-    let _ = restart_service_internal(&password);
+    restart_service_internal(&password)?;
 
     Ok(Json(serde_json::json!({
         "status": "success",
@@ -170,7 +172,7 @@ pub async fn delete_local_route(
     let new_yaml = build_config_yaml(&config)?;
     write_config_file(&password, &new_yaml)?;
 
-    let _ = restart_service_internal(&password);
+    restart_service_internal(&password)?;
 
     Ok(Json(serde_json::json!({
         "status": "success",
