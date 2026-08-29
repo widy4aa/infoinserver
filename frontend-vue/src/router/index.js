@@ -3,7 +3,7 @@ import HomeView from '../views/HomeView.vue'
 import ServerLayout from '../views/ServerLayout.vue'
 import DashboardView from '../views/DashboardView.vue'
 import PortsView from '../views/PortsView.vue'
-import PodmanView from '../views/PodmanView.vue'
+import ContainerView from '../views/ContainerView.vue'
 import CloudflareView from '../views/CloudflareView.vue'
 import FilesView from '../views/FilesView.vue'
 import SpeedtestView from '../views/SpeedtestView.vue'
@@ -23,7 +23,7 @@ const router = createRouter({
       component: HomeView,
     },
     {
-      path: '/settings', // Global settings (adding servers)
+      path: '/settings',
       name: 'global-settings',
       component: SettingsView,
     },
@@ -38,7 +38,9 @@ const router = createRouter({
         { path: 'speedtest', name: 'speedtest', component: SpeedtestView },
         { path: 'ports', name: 'ports', component: PortsView },
         { path: 'cloudflare', name: 'cloudflare', component: CloudflareView },
-        { path: 'podman', name: 'podman', component: PodmanView },
+        { path: 'containers', name: 'containers', component: ContainerView },
+        // Legacy redirect
+        { path: 'podman', redirect: to => ({ name: 'containers', params: to.params }) },
         { path: 'files', name: 'files', component: FilesView },
         { path: 'users', name: 'users', component: UsersView },
         { path: 'logs', name: 'logs', component: LogsView },

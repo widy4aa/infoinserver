@@ -1,10 +1,7 @@
 pub mod network;
 pub mod ports;
-pub mod podman;
-pub mod podman_create;
-pub mod podman_details;
-pub mod podman_logs;
-pub mod process_mgmt;
+pub mod container;
+pub mod compose;
 pub mod files;
 pub mod speedtest;
 pub mod system_mgmt;
@@ -21,3 +18,4 @@ pub mod users_mgmt;
 pub mod services_mgmt;
 pub mod syslogs;
 pub mod cron_mgmt;
+pub mod process_mgmt;

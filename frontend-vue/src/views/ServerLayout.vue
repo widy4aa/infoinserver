@@ -96,7 +96,7 @@ onUnmounted(() => {
           <RouterLink :to="`/server/${currentServer.id}/files`" class="tab-item" active-class="tab-active">
             <FolderTree class="w-4 h-4" /> File Explorer
           </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/podman`" class="tab-item" active-class="tab-active">
+          <RouterLink :to="`/server/${currentServer.id}/containers`" class="tab-item" active-class="tab-active">
             <Box class="w-4 h-4" /> Containers
           </RouterLink>
           <RouterLink :to="`/server/${currentServer.id}/users`" class="tab-item" active-class="tab-active">

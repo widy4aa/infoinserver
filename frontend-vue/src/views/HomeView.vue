@@ -46,7 +46,7 @@ const { servers } = useServerStore()
           <RouterLink :to="`/server/${s.id}/ports`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Ports & Scan">
             <ShieldCheck class="w-4 h-4" />
           </RouterLink>
-          <RouterLink :to="`/server/${s.id}/podman`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Podman">
+          <RouterLink :to="`/server/${s.id}/containers`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Containers">
             <Box class="w-4 h-4" />
           </RouterLink>
           <RouterLink :to="`/server/${s.id}/cloudflare`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Cloudflare">

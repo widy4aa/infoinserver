@@ -2,6 +2,7 @@ use axum::{routing::{get, post, delete, put}, Router, middleware};
 use std::sync::{Arc, Mutex};
 use sysinfo::{System, Networks};
 use tokio::net::TcpListener;
+use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -16,6 +17,12 @@ pub struct AppState {
     sys: Arc<Mutex<System>>,
     networks: Arc<Mutex<Networks>>,
     db_pool: sqlx::SqlitePool,
+}
+
+/// State khusus untuk container (shared across handlers)
+#[derive(Clone)]
+pub struct ContainerState {
+    pub runtime: Arc<RwLock<Option<services::container_runtime::RuntimeInfo>>>,
 }
 
 #[tokio::main]
@@ -36,6 +43,22 @@ async fn main() {
         db_pool: db_pool.clone(),
     };
 
+    // Deteksi container runtime saat startup
+    let runtime_info = match services::container_runtime::detect_runtime() {
+        Ok(rt) => {
+            println!("Container runtime: {} v{} (compose: {})", rt.binary, rt.version, rt.compose_binary);
+            Some(rt)
+        }
+        Err(e) => {
+            println!("Warning: No container runtime detected — {}", e);
+            None
+        }
+    };
+
+    let container_state = ContainerState {
+        runtime: Arc::new(RwLock::new(runtime_info)),
+    };
+
     background::scheduler::start_background_tasks(db_pool).await;
 
     let cors = CorsLayer::new()
@@ -49,9 +72,6 @@ async fn main() {
 
     // ── Protected routes (semua wajib JWT) ───────────────────
     let protected_routes = Router::new()
-        // Hapus route polling system
-        // .route("/api/system", get(routes::system::system_info_handler))
-        // .route("/api/process/list", get(routes::process_mgmt::list_processes_handler))
         .route("/api/metrics/ws", get(routes::metrics_ws::metrics_ws_handler))
         .with_state(state.clone())
         .route("/api/metrics/history", get(routes::metrics_history::get_metrics_history_handler))
@@ -81,12 +101,44 @@ async fn main() {
         .route("/api/process/list", get(routes::process_mgmt::list_processes_handler))
         .with_state(state.clone())
         .route("/api/process/kill/{pid}", post(routes::process_mgmt::kill_process_handler))
-        .route("/api/podman/containers", get(routes::podman::list_containers_handler))
-        .route("/api/podman/containers/{action}/{id}", post(routes::podman::container_action_handler))
-        .route("/api/podman/create", post(routes::podman_create::create_container_handler))
-        .route("/api/podman/inspect/{id}", get(routes::podman_details::get_container_details_handler))
-        .route("/api/podman/logs/{id}", get(routes::podman_logs::get_container_logs_handler))
-        .with_state(state.clone())
+        // ── Container Management (Podman / Docker) ───────────
+        .route("/api/container/runtime", get(routes::container::get_runtime_info_handler))
+        .with_state(container_state.clone())
+        .route("/api/container/runtime/refresh", post(routes::container::refresh_runtime_handler))
+        .with_state(container_state.clone())
+        .route("/api/container/list", get(routes::container::list_containers_handler))
+        .with_state(container_state.clone())
+        .route("/api/container/create", post(routes::container::create_container_handler))
+        .with_state(container_state.clone())
+        .route("/api/container/{action}/{id}", post(routes::container::container_action_handler))
+        .with_state(container_state.clone())
+        .route("/api/container/inspect/{id}", get(routes::container::inspect_handler))
+        .with_state(container_state.clone())
+        .route("/api/container/logs/{id}", get(routes::container::logs_handler))
+        .with_state(container_state.clone())
+        // ── Compose Management ───────────────────────────────
+        .route("/api/compose/projects", get(routes::compose::list_projects_handler))
+        .with_state(container_state.clone())
+        .route("/api/compose/deploy", post(routes::compose::deploy_project_handler))
+        .with_state(container_state.clone())
+        .route("/api/compose/{name}/stop", post(routes::compose::stop_project_handler))
+        .with_state(container_state.clone())
+        .route("/api/compose/{name}/restart", post(routes::compose::restart_project_handler))
+        .with_state(container_state.clone())
+        .route("/api/compose/{name}/rebuild", post(routes::compose::rebuild_project_handler))
+        .with_state(container_state.clone())
+        .route("/api/compose/{name}/ps", get(routes::compose::project_services_handler))
+        .with_state(container_state.clone())
+        .route("/api/compose/{name}/logs", get(routes::compose::project_logs_handler))
+        .with_state(container_state.clone())
+        .route("/api/compose/{name}/scale", post(routes::compose::scale_service_handler))
+        .with_state(container_state.clone())
+        .route("/api/compose/{name}/yaml", get(routes::compose::get_yaml_handler))
+        .route("/api/compose/{name}/yaml", put(routes::compose::update_yaml_handler))
+        .with_state(container_state.clone())
+        .route("/api/compose/{name}", delete(routes::compose::delete_project_handler))
+        .with_state(container_state.clone())
+        // ── Files ─────────────────────────────────────────────
         .route("/api/files/list", get(routes::files::list_files_handler))
         .route("/api/files/download", get(routes::files::download_file_handler))
         .route("/api/files/upload", post(routes::files::upload_file_handler))
