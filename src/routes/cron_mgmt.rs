@@ -1,6 +1,5 @@
 use axum::{extract::Extension, Json, http::StatusCode};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
 use crate::auth::jwt_middleware::AuthUser;
 use crate::routes::process_mgmt::sudo_exec;
 

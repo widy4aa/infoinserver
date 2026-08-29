@@ -128,15 +128,36 @@ pub async fn install_cloudflared(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
 
-    // Unduh ke /tmp
-    let _ = Command::new("wget")
-        .args(["-q", "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "-O", "/tmp/cloudflared"])
-        .output();
+    // 1. Buat temporary directory yang aman via bash (mktemp)
+    let temp_dir_out = sudo_exec(&password, &["mktemp", "-d"])
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create temp dir: {}", e)))?;
+    let temp_dir = String::from_utf8_lossy(&temp_dir_out.stdout).trim().to_string();
+
+    if temp_dir.is_empty() {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to create temp directory".to_string()));
+    }
+
+    let download_path = format!("{}/cloudflared", temp_dir);
+
+    // 2. Download via wget ke temp_dir. Wajib periksa exit status.
+    let wget_out = Command::new("wget")
+        .args(["-q", "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "-O", &download_path])
+        .output()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to execute wget: {}", e)))?;
+
+    if !wget_out.status.success() {
+        // Bersihkan temp dir jika gagal
+        let _ = sudo_exec(&password, &["rm", "-rf", &temp_dir]);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to download cloudflared binary from GitHub".to_string()));
+    }
         
-    // Pindahkan dan beri permisi eksekusi menggunakan sudo
-    let _ = sudo_exec(&password, &["mv", "/tmp/cloudflared", "/usr/local/bin/cloudflared"]);
+    // 3. Pindahkan dan beri permisi eksekusi menggunakan sudo
+    let _ = sudo_exec(&password, &["mv", &download_path, "/usr/local/bin/cloudflared"]);
     let output = sudo_exec(&password, &["chmod", "+x", "/usr/local/bin/cloudflared"])
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Execution failed: {}", e)))?;
+
+    // 4. Bersihkan folder sementara
+    let _ = sudo_exec(&password, &["rm", "-rf", &temp_dir]);
 
     if output.status.success() {
         Ok(Json(serde_json::json!({
@@ -190,16 +211,20 @@ pub async fn create_tunnel(
             let _ = sudo_exec(&password, &["mkdir", "-p", "/etc/cloudflared"]);
             let _ = sudo_exec(&password, &["cp", &source_json, &dest_json]);
             
-            // Buat default config.yml dengan kredensial ini
+            // Buat default config.yml dengan kredensial ini (menggunakan serde_yaml di fungsi lain lebih baik, tapi string ini cukup aman untuk initial)
             let default_config = format!(
                 "tunnel: {}\ncredentials-file: {}\ningress:\n  - service: http_status:404\n",
                 tunnel_id, dest_json
             );
             
-            // Tulis file config.yml dengan aman (tulis ke /tmp lalu mv)
-            let tmp_path = format!("/tmp/config_{}.yml", tunnel_id);
-            let _ = std::fs::write(&tmp_path, default_config);
-            let _ = sudo_exec(&password, &["mv", &tmp_path, "/etc/cloudflared/config.yml"]);
+            // Tulis file config.yml dengan aman menggunakan 'sudo sh -c' tanpa membuat file statis di /tmp
+            let write_cmd = format!("echo '{}' > /etc/cloudflared/config.yml", default_config);
+            let _ = sudo_exec(&password, &["sh", "-c", &write_cmd]);
+            
+            // Otomatis jalankan service install dan start
+            let _ = sudo_exec(&password, &["cloudflared", "--config", "/etc/cloudflared/config.yml", "service", "install"]);
+            let _ = sudo_exec(&password, &["systemctl", "enable", "cloudflared"]);
+            let _ = sudo_exec(&password, &["systemctl", "start", "cloudflared"]);
         }
 
         Ok(Json(serde_json::json!({
@@ -297,5 +322,25 @@ pub async fn stop_cloudflare_tunnel(
     Ok(Json(serde_json::json!({
         "status": "success",
         "message": "Cloudflare tunnel service stopped"
+    })))
+}
+
+/// Mendapatkan logs dari journalctl untuk service cloudflared
+pub async fn get_cloudflare_logs(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    
+    // Ambil 100 baris terakhir dari journalctl untuk cloudflared
+    let output = sudo_exec(&password, &["journalctl", "-u", "cloudflared", "-n", "100", "--no-pager", "-o", "cat"])
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read logs: {}", e)))?;
+
+    let logs = String::from_utf8_lossy(&output.stdout).to_string();
+    
+    // Split berdasarkan baris
+    let log_lines: Vec<String> = logs.lines().map(|s| s.to_string()).collect();
+
+    Ok(Json(serde_json::json!({
+        "logs": log_lines
     })))
 }

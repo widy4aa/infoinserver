@@ -1,9 +1,8 @@
 use axum::{extract::{Path, Query, State}, Json, http::StatusCode};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use crate::services::container_runtime::{
     detect_runtime, list_containers, container_action,
     create_container, inspect_container, container_logs,
-    RuntimeInfo,
 };
 use crate::ContainerState;
 

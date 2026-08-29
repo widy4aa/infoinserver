@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
@@ -317,7 +317,38 @@ const quickRefCommands = [
   { command: 'cloudflared tunnel login', description: 'Authorize server with Cloudflare (creates cert.pem)' },
 ]
 
-onMounted(fetchStatus)
+// ── Logs ─────────────────────────────────────────────────────
+const logs = ref([])
+const isFetchingLogs = ref(false)
+let logsTimer = null
+
+const fetchLogs = async () => {
+  if (isFetchingLogs.value) return
+  isFetchingLogs.value = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/logs`)
+    if (res.ok) {
+      const data = await res.json()
+      logs.value = data.logs || []
+    }
+  } catch (e) {
+    console.error("Failed to fetch logs", e)
+  } finally {
+    isFetchingLogs.value = false
+  }
+}
+
+// ── Lifecycle ────────────────────────────────────────────────
+onMounted(() => {
+  fetchStatus()
+  fetchLogs()
+  logsTimer = setInterval(fetchLogs, 5000)
+})
+
+onUnmounted(() => {
+  if (logsTimer) clearInterval(logsTimer)
+  if (loginPollTimer) clearInterval(loginPollTimer)
+})
 </script>
 
 <template>
@@ -646,6 +677,31 @@ onMounted(fetchStatus)
               </tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <!-- ── Section 5: Cloudflare Logs ────────────────────────── -->
+      <section v-if="status.installed" class="card">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="card-title">
+            <Terminal class="w-5 h-5 text-brand-500" />
+            Live Logs
+          </h2>
+          <div class="flex items-center gap-2">
+            <span v-if="isFetchingLogs" class="text-xs flex items-center gap-1 text-slate-500">
+              <Loader2 class="w-3 h-3 animate-spin" /> Fetching...
+            </span>
+            <button @click="fetchLogs" class="btn-outline text-xs" :disabled="isFetchingLogs">
+              <RefreshCw class="w-3.5 h-3.5" />
+              Refresh Logs
+            </button>
+          </div>
+        </div>
+        <div class="bg-black/90 text-green-400 font-mono text-[11px] p-4 rounded-lg overflow-x-auto h-64 overflow-y-auto whitespace-pre font-medium shadow-inner leading-relaxed">
+          <div v-if="logs.length === 0" class="text-slate-500 italic">No logs found...</div>
+          <div v-for="(line, idx) in logs" :key="idx" :class="{'text-red-400': line.includes('ERR'), 'text-amber-300': line.includes('WRN')}">
+            {{ line }}
+          </div>
         </div>
       </section>
 

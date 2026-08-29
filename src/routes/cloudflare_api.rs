@@ -1,6 +1,5 @@
 use axum::{Json, http::StatusCode, extract::Extension};
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 use crate::auth::jwt_middleware::AuthUser;
 use crate::routes::process_mgmt::sudo_exec;
 
@@ -280,13 +279,12 @@ fn read_config_file(password: &str) -> Result<String, (StatusCode, String)> {
 
 /// Tulis config.yml
 fn write_config_file(password: &str, content: &str) -> Result<(), (StatusCode, String)> {
-    let tmp_path = "/tmp/cloudflared_config_update.yml";
-    if let Err(e) = std::fs::write(tmp_path, content) {
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write tmp config: {}", e)));
-    }
+    // Escape single quotes for bash
+    let escaped_content = content.replace("'", "'\\''");
+    let cmd = format!("echo '{}' > {}", escaped_content, CONFIG_PATH);
 
-    let out = sudo_exec(password, &["mv", tmp_path, CONFIG_PATH])
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to move config: {}", e)))?;
+    let out = sudo_exec(password, &["sh", "-c", &cmd])
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to apply new config: {}", e)))?;
 
     if out.status.success() {
         Ok(())
@@ -295,93 +293,17 @@ fn write_config_file(password: &str, content: &str) -> Result<(), (StatusCode, S
     }
 }
 
-/// Parse config.yml secara manual (tanpa serde_yaml dependency yang berat)
-/// Format yang didukung sesuai dokumentasi cloudflared
+/// Parse config.yml menggunakan serde_yaml
 fn parse_config(raw: &str) -> Result<LocalTunnelConfig, (StatusCode, String)> {
-    let mut tunnel: Option<String> = None;
-    let mut credentials_file: Option<String> = None;
-    let mut ingress: Vec<IngressRule> = Vec::new();
-
-    let mut in_ingress = false;
-    let mut current_hostname: Option<String> = None;
-
-    for line in raw.lines() {
-        let trimmed = line.trim();
-
-        // Skip comment dan baris kosong
-        if trimmed.starts_with('#') || trimmed.is_empty() {
-            continue;
-        }
-
-        // Deteksi apakah kita masuk ke block ingress
-        if trimmed == "ingress:" {
-            in_ingress = true;
-            continue;
-        }
-
-        if !in_ingress {
-            // Parse field top-level
-            if let Some(val) = trimmed.strip_prefix("tunnel:") {
-                tunnel = Some(val.trim().to_string());
-            } else if let Some(val) = trimmed.strip_prefix("credentials-file:") {
-                credentials_file = Some(val.trim().to_string());
-            }
-        } else {
-            // Kita di dalam block ingress
-            if trimmed.starts_with("- hostname:") {
-                // Simpan hostname sementara
-                let val = trimmed.trim_start_matches("- hostname:").trim().to_string();
-                current_hostname = Some(val);
-            } else if trimmed.starts_with("hostname:") {
-                let val = trimmed.trim_start_matches("hostname:").trim().to_string();
-                current_hostname = Some(val);
-            } else if trimmed.starts_with("- service:") {
-                // Catch-all rule: - service: http_status:404
-                let val = trimmed.trim_start_matches("- service:").trim().to_string();
-                ingress.push(IngressRule {
-                    hostname: None,
-                    service: val,
-                });
-                current_hostname = None;
-            } else if trimmed.starts_with("service:") {
-                let val = trimmed.trim_start_matches("service:").trim().to_string();
-                ingress.push(IngressRule {
-                    hostname: current_hostname.take(),
-                    service: val,
-                });
-            }
-        }
-    }
-
-    Ok(LocalTunnelConfig {
-        tunnel,
-        credentials_file,
-        ingress,
+    serde_yaml::from_str(raw).map_err(|e| {
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse config.yml: {}", e))
     })
 }
 
-/// Build kembali YAML string dari struct LocalTunnelConfig
+
+/// Build kembali YAML string dari struct LocalTunnelConfig menggunakan serde_yaml
 fn build_config_yaml(config: &LocalTunnelConfig) -> Result<String, (StatusCode, String)> {
-    let mut yaml = String::new();
-
-    if let Some(ref t) = config.tunnel {
-        yaml.push_str(&format!("tunnel: {}\n", t));
-    }
-    if let Some(ref cf) = config.credentials_file {
-        yaml.push_str(&format!("credentials-file: {}\n", cf));
-    }
-    yaml.push('\n');
-    yaml.push_str("ingress:\n");
-
-    for rule in &config.ingress {
-        if let Some(ref hostname) = rule.hostname {
-            yaml.push_str(&format!("  - hostname: {}\n", hostname));
-            yaml.push_str(&format!("    service: {}\n", rule.service));
-        } else {
-            // Catch-all rule
-            yaml.push_str(&format!("  - service: {}\n", rule.service));
-        }
-    }
-
-    Ok(yaml)
+    serde_yaml::to_string(config).map_err(|e| {
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate config.yml: {}", e))
+    })
 }

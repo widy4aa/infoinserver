@@ -164,6 +164,7 @@ async fn main() {
         .route("/api/cloudflare/config", get(routes::cloudflare_api::get_local_config))
         .route("/api/cloudflare/routes", post(routes::cloudflare_api::add_local_route))
         .route("/api/cloudflare/routes", delete(routes::cloudflare_api::delete_local_route))
+        .route("/api/cloudflare/logs", get(routes::cloudflare::get_cloudflare_logs))
         .route("/api/terminal/start", post(routes::terminal::start_shellinabox_handler))
         .route("/api/terminal/ws", get(routes::terminal_ws::terminal_ws_handler))
         // Apply JWT middleware ke semua protected routes
