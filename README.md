@@ -86,12 +86,12 @@ rustup default stable
 sudo pacman -S iproute2 podman nmap wget ufw speedtest-cli
 
 # Ubuntu / Debian
-sudo apt install curl build-essential libpam0g-dev zip unzip
+sudo apt install curl build-essential libpam0g-dev libclang-dev libssl-dev zip unzip
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 sudo apt install iproute2 podman nmap wget ufw speedtest-cli
 ```
 
-> **Note:** `libpam0g-dev` is required to compile the PAM authentication module. `zip` and `unzip` are required for File Explorer archive actions.
+> **Note:** `libpam0g-dev` is required to compile the PAM authentication module. `libclang-dev` is required by `pam-sys` (bindgen). `libssl-dev` is required for TLS (reqwest native-tls). `zip` and `unzip` are required for File Explorer archive actions.
 
 ### Frontend Host
 
