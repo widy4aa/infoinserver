@@ -17,7 +17,7 @@ pub struct IngressRule {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LocalTunnelConfig {
     pub tunnel: Option<String>,
-    #[serde(rename = "credentials-file")]
+    #[serde(rename = "credentials-file", alias = "credentials_file")]
     pub credentials_file: Option<String>,
     pub ingress: Vec<IngressRule>,
 }

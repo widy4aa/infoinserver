@@ -18,7 +18,7 @@ const { isDark } = useThemeStore()
 const handleApiError = async (res) => {
   let errText = ''
   try {
-    const data = await res.json()
+    const data = await res.clone().json()
     errText = data.message || data.error || JSON.stringify(data)
   } catch (e) {
     errText = await res.text()
