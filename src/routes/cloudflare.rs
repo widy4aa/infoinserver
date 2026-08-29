@@ -149,8 +149,11 @@ pub async fn install_cloudflared(
 }
 
 pub async fn create_tunnel(
+    Extension(auth): Extension<AuthUser>,
     Json(payload): Json<CreateTunnelRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+
     // Validasi nama tunnel (hanya huruf, angka, dash)
     if payload.name.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "Tunnel name cannot be empty".to_string()));
@@ -176,6 +179,27 @@ pub async fn create_tunnel(
             .find(|l| l.contains("with id"))
             .and_then(|l| l.split("with id").nth(1))
             .map(|s| s.trim().to_string());
+            
+        if let Some(ref tunnel_id) = uuid {
+            // Pindahkan kredensial ke /etc/cloudflared agar systemd dapat membacanya
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+            let source_json = format!("{}/.cloudflared/{}.json", home, tunnel_id);
+            let dest_json = format!("/etc/cloudflared/{}.json", tunnel_id);
+            
+            // Buat direktori /etc/cloudflared jika belum ada
+            let _ = sudo_exec(&password, &["mkdir", "-p", "/etc/cloudflared"]);
+            let _ = sudo_exec(&password, &["cp", &source_json, &dest_json]);
+            
+            // Buat default config.yml dengan kredensial ini
+            let default_config = format!(
+                "tunnel: {}\ncredentials-file: {}\ningress:\n  - service: http_status:404\n",
+                tunnel_id, dest_json
+            );
+            
+            // Tulis file config.yml dengan bash -c echo
+            let write_cmd = format!("echo '{}' > /etc/cloudflared/config.yml", default_config);
+            let _ = sudo_exec(&password, &["bash", "-c", &write_cmd]);
+        }
 
         Ok(Json(serde_json::json!({
             "status": "success",

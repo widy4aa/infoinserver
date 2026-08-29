@@ -93,8 +93,8 @@ pub async fn add_local_route(
         Ok(r) => r,
         Err(e) => {
             if e.0 == StatusCode::NOT_FOUND {
-                // If it's empty/missing, just create basic structure
-                format!("tunnel: {}\ncredentials-file: /etc/cloudflared/{}.json\ningress:\n  - service: http_status:404\n", payload.tunnel_name, payload.tunnel_name)
+                // If it's missing, it's an error because the tunnel configuration should have been created
+                return Err((StatusCode::BAD_REQUEST, "Configuration file /etc/cloudflared/config.yml is missing. Please create the tunnel first.".to_string()));
             } else {
                 return Err(e);
             }
@@ -278,26 +278,11 @@ fn read_config_file(password: &str) -> Result<String, (StatusCode, String)> {
     }
 }
 
-/// Tulis config.yml via `sudo tee`
+/// Tulis config.yml
 fn write_config_file(password: &str, content: &str) -> Result<(), (StatusCode, String)> {
-    use std::io::Write;
-    use std::process::Stdio;
-
-    // Use echo + sudo tee
-    let mut child = Command::new("sudo")
-        .args(["-S", "tee", CONFIG_PATH])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
+    let write_cmd = format!("cat << 'EOF' > {}\n{}\nEOF", CONFIG_PATH, content);
+    let out = sudo_exec(password, &["bash", "-c", &write_cmd])
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write config: {}", e)))?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        let _ = stdin.write_all(format!("{}\n{}", password, content).as_bytes());
-    }
-
-    let out = child.wait_with_output()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to wait for tee: {}", e)))?;
 
     if out.status.success() {
         Ok(())
