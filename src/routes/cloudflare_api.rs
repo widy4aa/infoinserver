@@ -1,6 +1,8 @@
-use axum::{Json, http::StatusCode};
+use axum::{Json, http::StatusCode, extract::Extension};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use crate::auth::jwt_middleware::AuthUser;
+use crate::routes::process_mgmt::sudo_exec;
 
 const CONFIG_PATH: &str = "/etc/cloudflared/config.yml";
 
@@ -32,10 +34,28 @@ pub struct DeleteRouteRequest {
 }
 
 /// Baca dan parse /etc/cloudflared/config.yml
-pub async fn get_local_config() -> Result<Json<LocalTunnelConfig>, (StatusCode, String)> {
-    let raw = read_config_file()?;
-    let config = parse_config(&raw)?;
-    Ok(Json(config))
+pub async fn get_local_config(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<LocalTunnelConfig>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    match read_config_file(&password) {
+        Ok(raw) => match parse_config(&raw) {
+            Ok(config) => Ok(Json(config)),
+            Err(e) => Err(e),
+        },
+        Err(e) => {
+            if e.0 == StatusCode::NOT_FOUND {
+                // Jika file tidak ada, kembalikan config kosong, jangan 404/500
+                Ok(Json(LocalTunnelConfig {
+                    tunnel: None,
+                    credentials_file: None,
+                    ingress: vec![],
+                }))
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 /// Tambah route baru:
@@ -43,17 +63,18 @@ pub async fn get_local_config() -> Result<Json<LocalTunnelConfig>, (StatusCode, 
 /// 2) Update config.yml
 /// 3) Restart service
 pub async fn add_local_route(
+    Extension(auth): Extension<AuthUser>,
     Json(payload): Json<AddRouteRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+
     // Validasi input
     if payload.hostname.is_empty() || payload.service.is_empty() || payload.tunnel_name.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "hostname, service, and tunnel_name must not be empty".to_string()));
     }
 
     // 1. Daftarkan DNS CNAME ke Cloudflare
-    let dns_output = Command::new("cloudflared")
-        .args(["tunnel", "route", "dns", &payload.tunnel_name, &payload.hostname])
-        .output()
+    let dns_output = sudo_exec(&password, &["cloudflared", "tunnel", "route", "dns", &payload.tunnel_name, &payload.hostname])
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to register DNS: {}", e)))?;
 
     let dns_stdout = String::from_utf8_lossy(&dns_output.stdout).to_string();
@@ -68,7 +89,18 @@ pub async fn add_local_route(
     };
 
     // 2. Baca config lama
-    let raw = read_config_file()?;
+    let raw = match read_config_file(&password) {
+        Ok(r) => r,
+        Err(e) => {
+            if e.0 == StatusCode::NOT_FOUND {
+                // If it's empty/missing, just create basic structure
+                format!("tunnel: {}\ncredentials-file: /etc/cloudflared/{}.json\ningress:\n  - service: http_status:404\n", payload.tunnel_name, payload.tunnel_name)
+            } else {
+                return Err(e);
+            }
+        }
+    };
+    
     let mut config = parse_config(&raw)?;
 
     // Cek apakah hostname sudah ada
@@ -95,10 +127,10 @@ pub async fn add_local_route(
 
     // 4. Tulis kembali ke config.yml
     let new_yaml = build_config_yaml(&config)?;
-    write_config_file(&new_yaml)?;
+    write_config_file(&password, &new_yaml)?;
 
     // 5. Restart service
-    let _ = restart_service_internal();
+    let _ = restart_service_internal(&password);
 
     Ok(Json(serde_json::json!({
         "status": "success",
@@ -109,13 +141,16 @@ pub async fn add_local_route(
 
 /// Hapus route dari config dan restart service
 pub async fn delete_local_route(
+    Extension(auth): Extension<AuthUser>,
     Json(payload): Json<DeleteRouteRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+
     if payload.hostname.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "hostname must not be empty".to_string()));
     }
 
-    let raw = read_config_file()?;
+    let raw = read_config_file(&password)?;
     let mut config = parse_config(&raw)?;
 
     let before_len = config.ingress.len();
@@ -134,9 +169,9 @@ pub async fn delete_local_route(
     }
 
     let new_yaml = build_config_yaml(&config)?;
-    write_config_file(&new_yaml)?;
+    write_config_file(&password, &new_yaml)?;
 
-    let _ = restart_service_internal();
+    let _ = restart_service_internal(&password);
 
     Ok(Json(serde_json::json!({
         "status": "success",
@@ -145,8 +180,11 @@ pub async fn delete_local_route(
 }
 
 /// Restart cloudflared service
-pub async fn restart_service() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    restart_service_internal()?;
+pub async fn restart_service(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    restart_service_internal(&password)?;
     Ok(Json(serde_json::json!({
         "status": "success",
         "message": "cloudflared service restarted"
@@ -157,10 +195,8 @@ pub async fn restart_service() -> Result<Json<serde_json::Value>, (StatusCode, S
 // Internal helpers
 // ─────────────────────────────────────────────────────────────
 
-fn restart_service_internal() -> Result<(), (StatusCode, String)> {
-    let out = Command::new("sudo")
-        .args(["systemctl", "restart", "cloudflared"])
-        .output()
+fn restart_service_internal(password: &str) -> Result<(), (StatusCode, String)> {
+    let out = sudo_exec(password, &["systemctl", "restart", "cloudflared"])
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to restart: {}", e)))?;
 
     if out.status.success() {
@@ -171,30 +207,28 @@ fn restart_service_internal() -> Result<(), (StatusCode, String)> {
 }
 
 /// Baca config.yml via sudo cat (agar bisa baca /etc/cloudflared)
-fn read_config_file() -> Result<String, (StatusCode, String)> {
-    if !std::path::Path::new(CONFIG_PATH).exists() {
-        return Err((StatusCode::NOT_FOUND, format!("Config file not found at {}", CONFIG_PATH)));
-    }
-
-    let out = Command::new("sudo")
-        .args(["cat", CONFIG_PATH])
-        .output()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read config: {}", e)))?;
+fn read_config_file(password: &str) -> Result<String, (StatusCode, String)> {
+    // We cannot reliably use `Path::new().exists()` because the parent dir is root-owned.
+    // Instead, just execute `sudo cat` and check the error.
+    let out = sudo_exec(password, &["cat", CONFIG_PATH])
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to run cat: {}", e)))?;
 
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).to_string())
     } else {
-        Err((StatusCode::INTERNAL_SERVER_ERROR, String::from_utf8_lossy(&out.stderr).to_string()))
+        // If it fails, assume the file does not exist
+        Err((StatusCode::NOT_FOUND, format!("Config file not found at {}", CONFIG_PATH)))
     }
 }
 
 /// Tulis config.yml via `sudo tee`
-fn write_config_file(content: &str) -> Result<(), (StatusCode, String)> {
+fn write_config_file(password: &str, content: &str) -> Result<(), (StatusCode, String)> {
     use std::io::Write;
     use std::process::Stdio;
 
+    // Use echo + sudo tee
     let mut child = Command::new("sudo")
-        .args(["tee", CONFIG_PATH])
+        .args(["-S", "tee", CONFIG_PATH])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -202,8 +236,7 @@ fn write_config_file(content: &str) -> Result<(), (StatusCode, String)> {
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write config: {}", e)))?;
 
     if let Some(stdin) = child.stdin.as_mut() {
-        stdin.write_all(content.as_bytes())
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write stdin: {}", e)))?;
+        let _ = stdin.write_all(format!("{}\n{}", password, content).as_bytes());
     }
 
     let out = child.wait_with_output()

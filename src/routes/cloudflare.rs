@@ -1,6 +1,8 @@
-use axum::{Json, http::StatusCode};
+use axum::{Json, http::StatusCode, extract::Extension};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use crate::auth::jwt_middleware::AuthUser;
+use crate::routes::process_mgmt::sudo_exec;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CloudflareStatus {
@@ -29,7 +31,10 @@ pub struct LoginStatusResponse {
     pub authenticated: bool,
 }
 
-pub async fn get_cloudflare_status() -> Result<Json<CloudflareStatus>, (StatusCode, String)> {
+pub async fn get_cloudflare_status(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<CloudflareStatus>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
     // 1. Cek apakah cloudflared terinstall
     let installed = Command::new("which")
         .arg("cloudflared")
@@ -85,30 +90,27 @@ pub async fn get_cloudflare_status() -> Result<Json<CloudflareStatus>, (StatusCo
 
     // 6. Baca config.yml untuk ambil tunnel UUID
     let config_path = "/etc/cloudflared/config.yml";
-    let config_exists = std::path::Path::new(config_path).exists();
-    let tunnel_uuid = if config_exists {
-        // Baca config dengan sudo cat
-        Command::new("sudo")
-            .args(["cat", config_path])
-            .output()
-            .ok()
-            .and_then(|out| {
-                let content = String::from_utf8_lossy(&out.stdout).to_string();
-                // Cari baris "tunnel: <uuid>"
-                for line in content.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("tunnel:") {
-                        let uuid = trimmed.trim_start_matches("tunnel:").trim().to_string();
-                        if !uuid.is_empty() {
-                            return Some(uuid);
-                        }
+    let tunnel_uuid = sudo_exec(&password, &["cat", config_path])
+        .ok()
+        .and_then(|out| {
+            if !out.status.success() {
+                return None;
+            }
+            let content = String::from_utf8_lossy(&out.stdout).to_string();
+            // Cari baris "tunnel: <uuid>"
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("tunnel:") {
+                    let uuid = trimmed.trim_start_matches("tunnel:").trim().to_string();
+                    if !uuid.is_empty() {
+                        return Some(uuid);
                     }
                 }
-                None
-            })
-    } else {
-        None
-    };
+            }
+            None
+        });
+        
+    let config_exists = tunnel_uuid.is_some();
 
     Ok(Json(CloudflareStatus {
         installed: true,
@@ -121,14 +123,19 @@ pub async fn get_cloudflare_status() -> Result<Json<CloudflareStatus>, (StatusCo
     }))
 }
 
-pub async fn install_cloudflared() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    // Download dan install cloudflared binary ke /usr/local/bin
-    let cmd = "wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /tmp/cloudflared && sudo mv /tmp/cloudflared /usr/local/bin/cloudflared && sudo chmod +x /usr/local/bin/cloudflared";
+pub async fn install_cloudflared(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
 
-    let output = Command::new("bash")
-        .arg("-c")
-        .arg(cmd)
-        .output()
+    // Unduh ke /tmp
+    let _ = Command::new("wget")
+        .args(["-q", "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "-O", "/tmp/cloudflared"])
+        .output();
+        
+    // Pindahkan dan beri permisi eksekusi menggunakan sudo
+    let _ = sudo_exec(&password, &["mv", "/tmp/cloudflared", "/usr/local/bin/cloudflared"]);
+    let output = sudo_exec(&password, &["chmod", "+x", "/usr/local/bin/cloudflared"])
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Execution failed: {}", e)))?;
 
     if output.status.success() {
@@ -251,16 +258,16 @@ pub async fn check_login_status() -> Result<Json<LoginStatusResponse>, (StatusCo
     Ok(Json(LoginStatusResponse { authenticated }))
 }
 
-pub async fn stop_cloudflare_tunnel() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+pub async fn stop_cloudflare_tunnel(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    
     // Stop service cloudflared (managed tunnel)
-    let _ = Command::new("sudo")
-        .args(["systemctl", "stop", "cloudflared"])
-        .output();
+    let _ = sudo_exec(&password, &["systemctl", "stop", "cloudflared"]);
 
     // Juga matikan process manual jika ada
-    let _ = Command::new("pkill")
-        .args(["-x", "cloudflared"])
-        .output();
+    let _ = sudo_exec(&password, &["pkill", "-x", "cloudflared"]);
 
     Ok(Json(serde_json::json!({
         "status": "success",
