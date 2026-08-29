@@ -7,7 +7,7 @@ import { useThemeStore } from '../stores/themeStore'
 import {
   Cloud, CheckCircle2, XCircle, Loader2, Plus, Trash2,
   RefreshCw, Terminal, KeyRound, ExternalLink, ShieldCheck,
-  AlertTriangle, DownloadCloud, ChevronRight, Copy
+  AlertTriangle, DownloadCloud, ChevronRight, Copy, Play, Square
 } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
@@ -41,6 +41,8 @@ const createTunnelResult = ref(null)
 
 // ── Action states ────────────────────────────────────────────
 const isRestarting = ref(false)
+const isStarting = ref(false)
+const isStopping = ref(false)
 const isInstalling = ref(false)
 
 // ── Computed helpers ─────────────────────────────────────────
@@ -240,7 +242,7 @@ const deleteRoute = (hostname) => {
   })
 }
 
-// ── Restart ──────────────────────────────────────────────────
+// ── Restart / Start / Stop ──────────────────────────────────────────────────
 const restartService = async () => {
   isRestarting.value = true
   try {
@@ -257,6 +259,44 @@ const restartService = async () => {
   } finally {
     isRestarting.value = false
   }
+}
+
+const startService = async () => {
+  isStarting.value = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/start`, { method: 'POST' })
+    const data = await res.json()
+    if (res.ok) {
+      showToast('Success', data.message, 'success')
+      await fetchStatus()
+    } else {
+      showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+    }
+  } catch (e) {
+    showToast('Error', e.message, 'error')
+  } finally {
+    isStarting.value = false
+  }
+}
+
+const stopService = async () => {
+  showConfirm("Confirm Stop", "Are you sure you want to stop the cloudflared service?", async () => {
+    isStopping.value = true
+    try {
+      const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/stop`, { method: 'POST' })
+      const data = await res.json()
+      if (res.ok) {
+        showToast('Success', data.message, 'success')
+        await fetchStatus()
+      } else {
+        showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+      }
+    } catch (e) {
+      showToast('Error', e.message, 'error')
+    } finally {
+      isStopping.value = false
+    }
+  })
 }
 
 const quickRefCommands = [
@@ -292,14 +332,24 @@ onMounted(fetchStatus)
             </h2>
             <p class="text-sm text-slate-500 mt-0.5">Manage tunnels via <code class="bg-slate-100 dark:bg-slate-800 px-1 rounded text-xs">/etc/cloudflared/config.yml</code></p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
             <button @click="fetchStatus" class="btn-outline text-xs" title="Refresh status">
               <RefreshCw class="w-4 h-4" />
+            </button>
+            <button v-if="!status.service_active && !status.running && status.installed" @click="startService" class="btn-success text-xs" :disabled="isStarting">
+              <Loader2 v-if="isStarting" class="w-4 h-4 animate-spin" />
+              <Play v-else class="w-4 h-4" />
+              Start Service
+            </button>
+            <button v-if="status.service_active || status.running" @click="stopService" class="btn-danger text-xs" :disabled="isStopping">
+              <Loader2 v-if="isStopping" class="w-4 h-4 animate-spin" />
+              <Square v-else class="w-4 h-4" />
+              Stop Service
             </button>
             <button v-if="status.service_active || status.running" @click="restartService" class="btn-outline text-xs" :disabled="isRestarting">
               <Loader2 v-if="isRestarting" class="w-4 h-4 animate-spin" />
               <RefreshCw v-else class="w-4 h-4" />
-              Restart Service
+              Restart
             </button>
           </div>
         </div>

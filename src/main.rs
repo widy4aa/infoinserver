@@ -159,6 +159,7 @@ async fn main() {
         .route("/api/cloudflare/login", post(routes::cloudflare::start_tunnel_login))
         .route("/api/cloudflare/login/status", get(routes::cloudflare::check_login_status))
         .route("/api/cloudflare/stop", post(routes::cloudflare::stop_cloudflare_tunnel))
+        .route("/api/cloudflare/start", post(routes::cloudflare_api::start_service))
         .route("/api/cloudflare/restart", post(routes::cloudflare_api::restart_service))
         .route("/api/cloudflare/config", get(routes::cloudflare_api::get_local_config))
         .route("/api/cloudflare/routes", post(routes::cloudflare_api::add_local_route))

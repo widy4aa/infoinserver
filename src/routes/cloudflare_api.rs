@@ -191,6 +191,25 @@ pub async fn restart_service(
     })))
 }
 
+/// Start cloudflared service
+pub async fn start_service(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    
+    let out = sudo_exec(&password, &["systemctl", "start", "cloudflared"])
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to start service: {}", e)))?;
+
+    if out.status.success() {
+        Ok(Json(serde_json::json!({
+            "status": "success",
+            "message": "cloudflared service started"
+        })))
+    } else {
+        Err((StatusCode::INTERNAL_SERVER_ERROR, String::from_utf8_lossy(&out.stderr).to_string()))
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────
