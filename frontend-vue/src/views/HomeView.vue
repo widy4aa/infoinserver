@@ -9,53 +9,53 @@ const { servers } = useServerStore()
 <template>
   <div class="space-y-6">
     <div class="flex justify-between items-center">
-      <h2 class="text-2xl font-bold text-slate-800">Your Servers</h2>
+      <h2 class="text-2xl font-bold text-slate-800 dark:text-slate-100">Your Servers</h2>
       <RouterLink to="/settings" class="btn-primary">
         <Plus class="w-4 h-4" /> Add Server
       </RouterLink>
     </div>
 
-    <div v-if="servers.length === 0" class="text-center py-12 bg-white rounded-xl border border-slate-200 border-dashed">
-      <Server class="w-12 h-12 text-slate-300 mx-auto mb-3" />
-      <h3 class="text-lg font-medium text-slate-900">No servers configured</h3>
-      <p class="text-slate-500 mt-1 mb-4">Add your first backend server to start monitoring.</p>
+    <div v-if="servers.length === 0" class="text-center py-12 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 border-dashed">
+      <Server class="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+      <h3 class="text-lg font-medium text-slate-900 dark:text-slate-100">No servers configured</h3>
+      <p class="text-slate-500 dark:text-slate-400 mt-1 mb-4">Add your first backend server to start monitoring.</p>
       <RouterLink to="/settings" class="btn-primary"><Plus class="w-4 h-4" /> Add Server</RouterLink>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <div v-for="s in servers" :key="s.id" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow flex flex-col group">
+      <div v-for="s in servers" :key="s.id" class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden hover:shadow-md transition-shadow flex flex-col group">
         
         <!-- Header Card (Clickable to enter server) -->
-        <RouterLink :to="`/server/${s.id}/dashboard`" class="p-5 border-b border-slate-100 bg-slate-50 flex items-start gap-4 hover:bg-brand-50 transition-colors flex-1 cursor-pointer">
-          <div class="w-12 h-12 rounded-xl bg-brand-100 flex items-center justify-center text-brand-600 shrink-0 shadow-sm group-hover:bg-brand-600 group-hover:text-white transition-colors">
+        <RouterLink :to="`/server/${s.id}/dashboard`" class="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-start gap-4 hover:bg-brand-50 dark:hover:bg-slate-700 transition-colors flex-1 cursor-pointer">
+          <div class="w-12 h-12 rounded-xl bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 dark:text-brand-400 shrink-0 shadow-sm group-hover:bg-brand-600 group-hover:text-white dark:group-hover:bg-brand-500 transition-colors">
             <Server class="w-6 h-6" />
           </div>
           <div class="flex-1 min-w-0">
-            <h3 class="font-bold text-slate-800 text-lg leading-tight truncate" :title="s.name">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg leading-tight truncate" :title="s.name">
               {{ s.name }}
             </h3>
-            <div class="text-xs text-slate-500 font-mono mt-1 truncate">{{ s.url }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 font-mono mt-1 truncate">{{ s.url }}</div>
           </div>
         </RouterLink>
 
         <!-- Footer Menu (Quick Links) -->
-        <div class="p-2 border-t border-slate-100 bg-white grid grid-cols-6 divide-x divide-slate-100">
-          <RouterLink :to="`/server/${s.id}/speedtest`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Speedtest">
+        <div class="p-2 border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 grid grid-cols-6 divide-x divide-slate-100 dark:divide-slate-700">
+          <RouterLink :to="`/server/${s.id}/speedtest`" class="flex items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded transition-colors" title="Speedtest">
             <Activity class="w-4 h-4" />
           </RouterLink>
-          <RouterLink :to="`/server/${s.id}/ports`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Ports & Scan">
+          <RouterLink :to="`/server/${s.id}/ports`" class="flex items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded transition-colors" title="Ports & Scan">
             <ShieldCheck class="w-4 h-4" />
           </RouterLink>
-          <RouterLink :to="`/server/${s.id}/containers`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Containers">
+          <RouterLink :to="`/server/${s.id}/containers`" class="flex items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded transition-colors" title="Containers">
             <Box class="w-4 h-4" />
           </RouterLink>
-          <RouterLink :to="`/server/${s.id}/cloudflare`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Cloudflare">
+          <RouterLink :to="`/server/${s.id}/cloudflare`" class="flex items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded transition-colors" title="Cloudflare">
             <Cloud class="w-4 h-4" />
           </RouterLink>
-          <RouterLink :to="`/server/${s.id}/files`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="File Explorer">
+          <RouterLink :to="`/server/${s.id}/files`" class="flex items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded transition-colors" title="File Explorer">
             <FolderTree class="w-4 h-4" />
           </RouterLink>
-          <RouterLink :to="`/server/${s.id}/settings`" class="flex items-center justify-center p-2 text-slate-500 hover:text-brand-600 hover:bg-slate-50 rounded transition-colors" title="Settings">
+          <RouterLink :to="`/server/${s.id}/settings`" class="flex items-center justify-center p-2 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-50 dark:hover:bg-slate-700 rounded transition-colors" title="Settings">
             <Settings class="w-4 h-4" />
           </RouterLink>
         </div>

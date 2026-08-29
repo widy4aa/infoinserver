@@ -3,11 +3,13 @@ import { ref, onMounted } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
+import { useThemeStore } from '../stores/themeStore'
 import { Activity, Play, History, Download, Upload, Server } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast } = useToastStore()
+const { isDark } = useThemeStore()
 
 const history = ref([])
 const isRunning = ref(false)
@@ -79,7 +81,7 @@ onMounted(() => {
 
       <div class="overflow-x-auto">
         <table class="w-full relative">
-          <thead class="bg-slate-50">
+          <thead :class="isDark ? 'bg-slate-800/50' : 'bg-slate-50'">
             <tr>
               <th class="table-th">Date &amp; Time</th>
               <th class="table-th">Download</th>
@@ -95,17 +97,17 @@ onMounted(() => {
             <tr v-else-if="history.length === 0">
               <td colspan="5" class="text-center p-8 text-slate-500">No speedtest history found. Run a test to begin.</td>
             </tr>
-            <tr v-else v-for="item in history" :key="item.id" class="hover:bg-slate-50">
+            <tr v-else v-for="item in history" :key="item.id" class="transition-colors" :class="isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'">
               <td class="table-td text-xs text-slate-500">{{ formatDate(item.tested_at) }}</td>
-              <td class="table-td font-semibold text-green-600">
+              <td class="table-td font-semibold" :class="isDark ? 'text-green-400' : 'text-green-600'">
                 <div class="flex items-center gap-1.5"><Download class="w-3.5 h-3.5" /> {{ formatMbps(item.download_mbps) }}</div>
               </td>
-              <td class="table-td font-semibold text-blue-600">
+              <td class="table-td font-semibold" :class="isDark ? 'text-blue-400' : 'text-blue-600'">
                 <div class="flex items-center gap-1.5"><Upload class="w-3.5 h-3.5" /> {{ formatMbps(item.upload_mbps) }}</div>
               </td>
-              <td class="table-td text-amber-600 font-medium">{{ item.ping_ms ? item.ping_ms.toFixed(1) + ' ms' : '-' }}</td>
+              <td class="table-td font-medium" :class="isDark ? 'text-amber-400' : 'text-amber-600'">{{ item.ping_ms ? item.ping_ms.toFixed(1) + ' ms' : '-' }}</td>
               <td class="table-td text-xs">
-                <div class="flex items-center gap-1.5 text-slate-600">
+                <div class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
                   <Server class="w-3.5 h-3.5" /> 
                   <span class="truncate max-w-[150px]" :title="item.server_name || 'Unknown'">{{ item.server_name || 'Unknown' }}</span>
                 </div>

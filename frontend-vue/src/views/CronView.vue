@@ -4,10 +4,12 @@ import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
 import { Clock, Loader2, Save, Trash2, Edit3, Plus, X } from 'lucide-vue-next'
+import { useThemeStore } from '../stores/themeStore'
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
+const { isDark } = useThemeStore()
 
 const crontabRaw = ref('')
 const parsedJobs = ref([])

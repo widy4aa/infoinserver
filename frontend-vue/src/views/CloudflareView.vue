@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
+import { useThemeStore } from '../stores/themeStore'
 import {
   Cloud, CheckCircle2, XCircle, Loader2, Plus, Trash2,
   RefreshCw, Terminal, KeyRound, ExternalLink, ShieldCheck,
@@ -12,6 +13,7 @@ import {
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
+const { isDark } = useThemeStore()
 
 // ── Status ──────────────────────────────────────────────────
 const status = ref(null)
@@ -288,7 +290,7 @@ onMounted(fetchStatus)
               <Cloud class="w-5 h-5 text-brand-500" />
               Cloudflare Tunnel — Local Management
             </h2>
-            <p class="text-sm text-slate-500 mt-0.5">Manage tunnels via <code class="bg-slate-100 px-1 rounded text-xs">/etc/cloudflared/config.yml</code></p>
+            <p class="text-sm text-slate-500 mt-0.5">Manage tunnels via <code class="bg-slate-100 dark:bg-slate-800 px-1 rounded text-xs">/etc/cloudflared/config.yml</code></p>
           </div>
           <div class="flex gap-2">
             <button @click="fetchStatus" class="btn-outline text-xs" title="Refresh status">
@@ -305,12 +307,12 @@ onMounted(fetchStatus)
         <!-- Status badges -->
         <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <!-- Installed -->
-          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.installed ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'">
-            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.installed ? 'text-green-600' : 'text-red-600'">Binary</span>
+          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.installed ? (isDark ? 'border-green-800 bg-green-900/20' : 'border-green-200 bg-green-50') : (isDark ? 'border-red-800 bg-red-900/20' : 'border-red-200 bg-red-50')">
+            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.installed ? (isDark ? 'text-green-400' : 'text-green-600') : (isDark ? 'text-red-400' : 'text-red-600')">Binary</span>
             <div class="flex items-center gap-1.5">
               <CheckCircle2 v-if="status.installed" class="w-4 h-4 text-green-500" />
               <XCircle v-else class="w-4 h-4 text-red-400" />
-              <span class="text-xs font-semibold" :class="status.installed ? 'text-green-700' : 'text-red-600'">
+              <span class="text-xs font-semibold" :class="status.installed ? (isDark ? 'text-green-300' : 'text-green-700') : (isDark ? 'text-red-300' : 'text-red-600')">
                 {{ status.installed ? 'Installed' : 'Not Installed' }}
               </span>
             </div>
@@ -318,24 +320,24 @@ onMounted(fetchStatus)
           </div>
 
           <!-- Service Active -->
-          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.service_active ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'">
-            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.service_active ? 'text-green-600' : 'text-slate-500'">Service</span>
+          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.service_active ? (isDark ? 'border-green-800 bg-green-900/20' : 'border-green-200 bg-green-50') : (isDark ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50')">
+            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.service_active ? (isDark ? 'text-green-400' : 'text-green-600') : 'text-slate-500'">Service</span>
             <div class="flex items-center gap-1.5">
               <CheckCircle2 v-if="status.service_active" class="w-4 h-4 text-green-500" />
               <XCircle v-else class="w-4 h-4 text-slate-400" />
-              <span class="text-xs font-semibold" :class="status.service_active ? 'text-green-700' : 'text-slate-600'">
+              <span class="text-xs font-semibold" :class="status.service_active ? (isDark ? 'text-green-300' : 'text-green-700') : (isDark ? 'text-slate-400' : 'text-slate-600')">
                 {{ status.service_active ? 'Active' : 'Inactive' }}
               </span>
             </div>
           </div>
 
           <!-- Auth -->
-          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.auth_cert_exists ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'">
-            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.auth_cert_exists ? 'text-green-600' : 'text-amber-600'">Auth</span>
+          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.auth_cert_exists ? (isDark ? 'border-green-800 bg-green-900/20' : 'border-green-200 bg-green-50') : (isDark ? 'border-amber-800 bg-amber-900/20' : 'border-amber-200 bg-amber-50')">
+            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.auth_cert_exists ? (isDark ? 'text-green-400' : 'text-green-600') : (isDark ? 'text-amber-400' : 'text-amber-600')">Auth</span>
             <div class="flex items-center gap-1.5">
               <ShieldCheck v-if="status.auth_cert_exists" class="w-4 h-4 text-green-500" />
               <AlertTriangle v-else class="w-4 h-4 text-amber-400" />
-              <span class="text-xs font-semibold" :class="status.auth_cert_exists ? 'text-green-700' : 'text-amber-700'">
+              <span class="text-xs font-semibold" :class="status.auth_cert_exists ? (isDark ? 'text-green-300' : 'text-green-700') : (isDark ? 'text-amber-300' : 'text-amber-700')">
                 {{ status.auth_cert_exists ? 'Authorized' : 'Not Authorized' }}
               </span>
             </div>
@@ -343,12 +345,12 @@ onMounted(fetchStatus)
           </div>
 
           <!-- Config / Tunnel -->
-          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.config_exists ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'">
-            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.config_exists ? 'text-green-600' : 'text-slate-500'">Tunnel Config</span>
+          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.config_exists ? (isDark ? 'border-green-800 bg-green-900/20' : 'border-green-200 bg-green-50') : (isDark ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50')">
+            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.config_exists ? (isDark ? 'text-green-400' : 'text-green-600') : 'text-slate-500'">Tunnel Config</span>
             <div class="flex items-center gap-1.5">
               <CheckCircle2 v-if="status.config_exists" class="w-4 h-4 text-green-500" />
               <XCircle v-else class="w-4 h-4 text-slate-400" />
-              <span class="text-xs font-semibold" :class="status.config_exists ? 'text-green-700' : 'text-slate-600'">
+              <span class="text-xs font-semibold" :class="status.config_exists ? (isDark ? 'text-green-300' : 'text-green-700') : (isDark ? 'text-slate-400' : 'text-slate-600')">
                 {{ status.config_exists ? 'Found' : 'Not Found' }}
               </span>
             </div>
@@ -377,16 +379,16 @@ onMounted(fetchStatus)
         <div class="space-y-3">
           <div class="flex items-center gap-2">
             <span class="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center"
-              :class="status.auth_cert_exists ? 'bg-green-100 text-green-700' : 'bg-brand-100 text-brand-700'">
+              :class="status.auth_cert_exists ? (isDark ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700') : (isDark ? 'bg-brand-900/30 text-brand-400' : 'bg-brand-100 text-brand-700')">
               {{ status.auth_cert_exists ? '✓' : '1' }}
             </span>
-            <h3 class="font-semibold text-sm text-slate-800">Authorize with Cloudflare</h3>
+            <h3 class="font-semibold text-sm" :class="isDark ? 'text-slate-200' : 'text-slate-800'">Authorize with Cloudflare</h3>
           </div>
-          <p class="text-xs text-slate-500 ml-8">
-            Runs <code class="bg-slate-100 px-1 rounded">cloudflared tunnel login</code> — opens a Cloudflare URL to authorize your server. After authorization, <code class="bg-slate-100 px-1 rounded">cert.pem</code> is saved automatically.
+          <p class="text-xs ml-8" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
+            Runs <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">cloudflared tunnel login</code> — opens a Cloudflare URL to authorize your server. After authorization, <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">cert.pem</code> is saved automatically.
           </p>
 
-          <div v-if="status.auth_cert_exists" class="ml-8 flex items-center gap-2 text-green-600 text-sm">
+          <div v-if="status.auth_cert_exists" class="ml-8 flex items-center gap-2 text-sm" :class="isDark ? 'text-green-400' : 'text-green-600'">
             <CheckCircle2 class="w-4 h-4" /> Already authorized
           </div>
 
@@ -398,22 +400,22 @@ onMounted(fetchStatus)
             </button>
 
             <!-- Authorization URL box -->
-            <div v-if="loginUrl" class="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <p class="text-xs font-semibold text-amber-700 mb-2">Open this URL in your browser and authorize your domain:</p>
+            <div v-if="loginUrl" class="p-3 border rounded-lg" :class="isDark ? 'bg-amber-900/10 border-amber-800' : 'bg-amber-50 border-amber-200'">
+              <p class="text-xs font-semibold mb-2" :class="isDark ? 'text-amber-400' : 'text-amber-700'">Open this URL in your browser and authorize your domain:</p>
               <div class="flex items-start gap-2">
-                <a :href="loginUrl" target="_blank" class="text-xs font-mono text-brand-700 hover:underline break-all flex-1">
+                <a :href="loginUrl" target="_blank" class="text-xs font-mono hover:underline break-all flex-1" :class="isDark ? 'text-brand-400' : 'text-brand-700'">
                   {{ loginUrl }}
                 </a>
                 <div class="flex gap-1 flex-shrink-0">
-                  <button @click="copyToClipboard(loginUrl)" class="p-1.5 rounded hover:bg-amber-100" title="Copy URL">
-                    <Copy class="w-3.5 h-3.5 text-amber-600" />
+                  <button @click="copyToClipboard(loginUrl)" class="p-1.5 rounded" :class="isDark ? 'hover:bg-amber-900/30 text-amber-500' : 'hover:bg-amber-100 text-amber-600'" title="Copy URL">
+                    <Copy class="w-3.5 h-3.5" />
                   </button>
-                  <a :href="loginUrl" target="_blank" class="p-1.5 rounded hover:bg-amber-100" title="Open in new tab">
-                    <ExternalLink class="w-3.5 h-3.5 text-amber-600" />
+                  <a :href="loginUrl" target="_blank" class="p-1.5 rounded" :class="isDark ? 'hover:bg-amber-900/30 text-amber-500' : 'hover:bg-amber-100 text-amber-600'" title="Open in new tab">
+                    <ExternalLink class="w-3.5 h-3.5" />
                   </a>
                 </div>
               </div>
-              <p v-if="isPollingLogin" class="text-[10px] text-amber-600 mt-2 flex items-center gap-1">
+              <p v-if="isPollingLogin" class="text-[10px] mt-2 flex items-center gap-1" :class="isDark ? 'text-amber-500' : 'text-amber-600'">
                 <Loader2 class="w-3 h-3 animate-spin" />
                 Waiting for you to authorize in the browser...
               </p>
@@ -421,22 +423,22 @@ onMounted(fetchStatus)
           </div>
         </div>
 
-        <hr class="border-slate-200" />
+        <hr :class="isDark ? 'border-slate-700' : 'border-slate-200'" />
 
         <!-- Step 2: Create Tunnel -->
         <div class="space-y-3">
           <div class="flex items-center gap-2">
             <span class="w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center"
-              :class="status.config_exists ? 'bg-green-100 text-green-700' : 'bg-brand-100 text-brand-700'">
+              :class="status.config_exists ? (isDark ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700') : (isDark ? 'bg-brand-900/30 text-brand-400' : 'bg-brand-100 text-brand-700')">
               {{ status.config_exists ? '✓' : '2' }}
             </span>
-            <h3 class="font-semibold text-sm text-slate-800">Create a Named Tunnel</h3>
+            <h3 class="font-semibold text-sm" :class="isDark ? 'text-slate-200' : 'text-slate-800'">Create a Named Tunnel</h3>
           </div>
-          <p class="text-xs text-slate-500 ml-8">
-            Runs <code class="bg-slate-100 px-1 rounded">cloudflared tunnel create &lt;name&gt;</code> — creates a tunnel UUID and credentials file. Then manually create <code class="bg-slate-100 px-1 rounded">/etc/cloudflared/config.yml</code> referencing this tunnel.
+          <p class="text-xs ml-8" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
+            Runs <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">cloudflared tunnel create &lt;name&gt;</code> — creates a tunnel UUID and credentials file. Then manually create <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">/etc/cloudflared/config.yml</code> referencing this tunnel.
           </p>
 
-          <div v-if="status.config_exists" class="ml-8 flex items-center gap-2 text-green-600 text-sm">
+          <div v-if="status.config_exists" class="ml-8 flex items-center gap-2 text-sm" :class="isDark ? 'text-green-400' : 'text-green-600'">
             <CheckCircle2 class="w-4 h-4" /> Tunnel configured (UUID: {{ status.tunnel_uuid ?? 'unknown' }})
           </div>
 
@@ -457,13 +459,13 @@ onMounted(fetchStatus)
             </div>
 
             <!-- Output dari create tunnel -->
-            <div v-if="createTunnelResult" class="p-3 bg-green-50 border border-green-200 rounded-lg">
-              <p class="text-xs font-semibold text-green-700 mb-1">{{ createTunnelResult.message }}</p>
-              <p v-if="createTunnelResult.uuid" class="text-xs font-mono text-slate-700">
+            <div v-if="createTunnelResult" class="p-3 border rounded-lg" :class="isDark ? 'bg-green-900/10 border-green-800' : 'bg-green-50 border-green-200'">
+              <p class="text-xs font-semibold mb-1" :class="isDark ? 'text-green-400' : 'text-green-700'">{{ createTunnelResult.message }}</p>
+              <p v-if="createTunnelResult.uuid" class="text-xs font-mono" :class="isDark ? 'text-slate-300' : 'text-slate-700'">
                 UUID: <strong>{{ createTunnelResult.uuid }}</strong>
               </p>
-              <p class="text-xs text-slate-500 mt-2">
-                Next: create <code class="bg-slate-100 px-1 rounded">/etc/cloudflared/config.yml</code> with this tunnel UUID, then come back to add routes.
+              <p class="text-xs mt-2" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
+                Next: create <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">/etc/cloudflared/config.yml</code> with this tunnel UUID, then come back to add routes.
               </p>
             </div>
           </div>
@@ -476,7 +478,7 @@ onMounted(fetchStatus)
           <h2 class="card-title">
             <ChevronRight class="w-5 h-5 text-brand-500" />
             Ingress Routes
-            <span v-if="localConfig" class="text-xs font-normal text-slate-500 ml-1">
+            <span v-if="localConfig" class="text-xs font-normal ml-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
               (Tunnel: <code class="font-mono">{{ localConfig.tunnel }}</code>)
             </span>
           </h2>
@@ -488,8 +490,8 @@ onMounted(fetchStatus)
         </div>
 
         <!-- Add route form -->
-        <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-5">
-          <h3 class="text-sm font-semibold mb-3 text-slate-700">Add New Route</h3>
+        <div class="border rounded-lg p-4 mb-5" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
+          <h3 class="text-sm font-semibold mb-3" :class="isDark ? 'text-slate-200' : 'text-slate-700'">Add New Route</h3>
           <div class="flex flex-col sm:flex-row gap-2">
             <input
               v-model="newHostname"
@@ -511,7 +513,7 @@ onMounted(fetchStatus)
               {{ isAddingRoute ? 'Adding...' : 'Add Route' }}
             </button>
           </div>
-          <p class="text-[10px] text-slate-400 mt-2">
+          <p class="text-[10px] mt-2" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
             Adding a route will: (1) register DNS CNAME via <code>cloudflared tunnel route dns</code>, (2) update config.yml, (3) restart service.
           </p>
         </div>
@@ -523,7 +525,7 @@ onMounted(fetchStatus)
 
         <div v-else-if="localConfig" class="overflow-x-auto">
           <table class="w-full">
-            <thead class="bg-slate-50 border-b-2 border-slate-200">
+            <thead class="border-b-2" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
               <tr>
                 <th class="table-th">Public Hostname</th>
                 <th class="table-th">Local Service</th>
@@ -531,18 +533,19 @@ onMounted(fetchStatus)
               </tr>
             </thead>
             <tbody>
-              <tr v-for="r in routes" :key="r.hostname" class="hover:bg-slate-50 border-b border-slate-100">
-                <td class="table-td font-semibold text-brand-700">
+              <tr v-for="r in routes" :key="r.hostname" class="border-b transition-colors" :class="isDark ? 'hover:bg-slate-800/50 border-slate-700' : 'hover:bg-slate-50 border-slate-100'">
+                <td class="table-td font-semibold" :class="isDark ? 'text-brand-400' : 'text-brand-700'">
                   <a :href="`https://${r.hostname}`" target="_blank" class="hover:underline flex items-center gap-1">
                     {{ r.hostname }}
-                    <ExternalLink class="w-3 h-3 text-slate-400" />
+                    <ExternalLink class="w-3 h-3" :class="isDark ? 'text-slate-500' : 'text-slate-400'" />
                   </a>
                 </td>
-                <td class="table-td font-mono text-xs text-slate-600">{{ r.service }}</td>
+                <td class="table-td font-mono text-xs" :class="isDark ? 'text-slate-300' : 'text-slate-600'">{{ r.service }}</td>
                 <td class="table-td text-right">
                   <button
                     @click="deleteRoute(r.hostname)"
-                    class="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                    class="p-1.5 rounded"
+                    :class="isDark ? 'text-red-400 hover:text-red-300 hover:bg-red-900/30' : 'text-red-400 hover:text-red-600 hover:bg-red-50'"
                     title="Remove Route"
                   >
                     <Trash2 class="w-4 h-4" />
@@ -550,14 +553,14 @@ onMounted(fetchStatus)
                 </td>
               </tr>
               <tr v-if="routes.length === 0">
-                <td colspan="3" class="text-center p-6 text-slate-500 text-sm">
+                <td colspan="3" class="text-center p-6 text-sm" :class="isDark ? 'text-slate-500' : 'text-slate-500'">
                   No ingress routes configured. Add one above.
                 </td>
               </tr>
             </tbody>
           </table>
           <!-- Catch-all info -->
-          <div class="mt-2 px-2 text-[10px] text-slate-400">
+          <div class="mt-2 px-2 text-[10px]" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
             Fallback: <code>http_status:404</code> (always last)
           </div>
         </div>
@@ -571,16 +574,16 @@ onMounted(fetchStatus)
         </h2>
         <div class="mt-3 overflow-x-auto">
           <table class="w-full text-xs">
-            <thead class="bg-slate-50 border-b border-slate-200">
+            <thead class="border-b" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
               <tr>
-                <th class="text-left px-3 py-2 font-semibold text-slate-600">Command</th>
-                <th class="text-left px-3 py-2 font-semibold text-slate-600">Description</th>
+                <th class="text-left px-3 py-2 font-semibold" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Command</th>
+                <th class="text-left px-3 py-2 font-semibold" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Description</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
-              <tr v-for="cmd in quickRefCommands" :key="cmd.command" class="hover:bg-slate-50">
-                <td class="px-3 py-2.5 font-mono text-slate-700 whitespace-nowrap">{{ cmd.command }}</td>
-                <td class="px-3 py-2.5 text-slate-500">{{ cmd.description }}</td>
+            <tbody class="divide-y" :class="isDark ? 'divide-slate-700' : 'divide-slate-100'">
+              <tr v-for="cmd in quickRefCommands" :key="cmd.command" :class="isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'">
+                <td class="px-3 py-2.5 font-mono whitespace-nowrap" :class="isDark ? 'text-slate-300' : 'text-slate-700'">{{ cmd.command }}</td>
+                <td class="px-3 py-2.5" :class="isDark ? 'text-slate-400' : 'text-slate-500'">{{ cmd.description }}</td>
               </tr>
             </tbody>
           </table>

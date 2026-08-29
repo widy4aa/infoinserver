@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
+import { useThemeStore } from '../stores/themeStore'
 import { Cpu, Loader2, Activity, Clock } from 'lucide-vue-next'
 
 import {
@@ -30,6 +31,7 @@ ChartJS.register(
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl, getToken, activeServerId } = useServerStore()
+const { isDark } = useThemeStore()
 
 const sysInfo = ref(null)
 const error = ref(null)
@@ -37,8 +39,8 @@ let ws = null
 
 // History Data
 const historyData = ref([])
-const fullHistoryData = ref([]) // Menyimpan data utuh dari API
-const historyTimeRange = ref('24h') // '24h', '12h', '6h', '3h', '1h'
+const fullHistoryData = ref([])
+const historyTimeRange = ref('24h')
 
 const filterHistoryByTime = (range) => {
   if (!fullHistoryData.value || fullHistoryData.value.length === 0) return []
@@ -114,8 +116,22 @@ const formatUptime = (seconds) => {
   return `${d}d ${h}h ${m}m`
 }
 
-// ── Chart Configurations ──
-const chartOptions = {
+// ── Dark-aware Chart Configurations ──
+const chartColors = computed(() => ({
+  // Grid/tick colors
+  grid: isDark.value ? '#1e293b' : '#f1f5f9',
+  tick: isDark.value ? '#475569' : '#94a3b8',
+  tooltipBg: isDark.value ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.9)',
+  
+  // Dataset colors (same, work on both backgrounds)
+  cpu: { border: '#3b82f6', fill: 'rgba(59, 130, 246, 0.15)' },
+  mem: { border: '#a855f7', fill: 'rgba(168, 85, 247, 0.15)' },
+  disk: { border: '#f59e0b', fill: 'rgba(245, 158, 11, 0.15)' },
+  netRx: '#10b981',
+  netTx: '#ef4444',
+}))
+
+const chartOptions = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
   interaction: {
@@ -123,9 +139,15 @@ const chartOptions = {
     intersect: false,
   },
   plugins: {
-    legend: { display: false },
+    legend: { 
+      display: false,
+      labels: {
+        color: isDark.value ? '#e2e8f0' : '#1e293b',
+        font: { size: 10 }
+      }
+    },
     tooltip: {
-      backgroundColor: 'rgba(15, 23, 42, 0.9)',
+      backgroundColor: chartColors.value.tooltipBg,
       titleFont: { size: 11 },
       bodyFont: { size: 12 },
       padding: 10,
@@ -138,17 +160,17 @@ const chartOptions = {
       ticks: {
         maxTicksLimit: 6,
         font: { size: 10 },
-        color: '#94a3b8'
+        color: chartColors.value.tick
       }
     },
     y: {
       min: 0,
       max: 100,
-      grid: { color: '#f1f5f9' },
+      grid: { color: chartColors.value.grid },
       border: { display: false },
       ticks: {
         font: { size: 10 },
-        color: '#94a3b8',
+        color: chartColors.value.tick,
         callback: (value) => value + '%'
       }
     }
@@ -156,7 +178,7 @@ const chartOptions = {
   elements: {
     point: { radius: 0, hitRadius: 10, hoverRadius: 4 }
   }
-}
+}))
 
 const cpuChartData = computed(() => {
   const labels = historyData.value.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
@@ -167,8 +189,8 @@ const cpuChartData = computed(() => {
     datasets: [{
       label: 'CPU Usage (%)',
       data,
-      borderColor: '#3b82f6',
-      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      borderColor: chartColors.value.cpu.border,
+      backgroundColor: chartColors.value.cpu.fill,
       borderWidth: 2,
       fill: true,
       tension: 0.4
@@ -188,8 +210,8 @@ const memChartData = computed(() => {
     datasets: [{
       label: 'Memory Usage (%)',
       data,
-      borderColor: '#a855f7',
-      backgroundColor: 'rgba(168, 85, 247, 0.1)',
+      borderColor: chartColors.value.mem.border,
+      backgroundColor: chartColors.value.mem.fill,
       borderWidth: 2,
       fill: true,
       tension: 0.4
@@ -209,8 +231,8 @@ const diskChartData = computed(() => {
     datasets: [{
       label: 'Disk Usage (%)',
       data,
-      borderColor: '#f59e0b',
-      backgroundColor: 'rgba(245, 158, 11, 0.1)',
+      borderColor: chartColors.value.disk.border,
+      backgroundColor: chartColors.value.disk.fill,
       borderWidth: 2,
       fill: true,
       tension: 0.4
@@ -257,7 +279,7 @@ const netChartData = computed(() => {
       {
         label: 'Download (Mbps)',
         data: rxData,
-        borderColor: '#10b981', // emerald
+        borderColor: chartColors.value.netRx,
         backgroundColor: 'transparent',
         borderWidth: 2,
         tension: 0.4
@@ -265,7 +287,7 @@ const netChartData = computed(() => {
       {
         label: 'Upload (Mbps)',
         data: txData,
-        borderColor: '#ef4444', // red
+        borderColor: chartColors.value.netTx,
         backgroundColor: 'transparent',
         borderWidth: 2,
         tension: 0.4
@@ -290,78 +312,76 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-6">
-    <div v-if="error" class="bg-red-50 text-red-600 p-4 rounded-md border border-red-200">
+    <div v-if="error" class="bg-red-50 text-red-600 p-4 rounded-md border border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800">
       Error connecting to backend: {{ error }}. Check Settings tab.
     </div>
 
-    <!-- Menghilangkan grid layout kolom kanan, gunakan 1 kolom utama -->
     <div class="flex flex-col gap-6">
-      
       <section class="flex flex-col gap-6">
         <!-- Live System Resources -->
         <div class="card">
           <h2 class="card-title"><Cpu class="w-5 h-5 text-brand-500" /> System Resources</h2>
           
-          <div v-if="!sysInfo" class="flex items-center gap-2 text-slate-500 text-sm">
+          <div v-if="!sysInfo" class="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm">
             <Loader2 class="w-4 h-4 animate-spin" /> Loading metrics...
           </div>
 
           <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 items-stretch">
-            <div class="p-4 bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center">
-              <div class="text-sm font-medium text-slate-500 mb-1">Hostname &amp; OS</div>
-              <div class="font-semibold text-slate-800 flex items-center gap-2">
+            <div class="p-4 bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center dark:bg-slate-800/50 dark:border-slate-700">
+              <div class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Hostname & OS</div>
+              <div class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 {{ sysInfo.hostname }}
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   {{ sysInfo.current_user }}
                 </span>
               </div>
-              <div class="text-xs text-slate-500 mt-1">{{ sysInfo.os_name }} • {{ sysInfo.kernel_version }}</div>
+              <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ sysInfo.os_name }} • {{ sysInfo.kernel_version }}</div>
             </div>
             
-            <div class="p-4 bg-green-50 rounded-lg border border-green-100 flex flex-col justify-center">
-              <div class="text-sm font-medium text-green-600 mb-1">Uptime</div>
-              <div class="font-bold text-green-700 text-lg">{{ formatUptime(sysInfo.uptime) }}</div>
+            <div class="p-4 bg-green-50 rounded-lg border border-green-100 flex flex-col justify-center dark:bg-green-900/20 dark:border-green-800">
+              <div class="text-sm font-medium text-green-600 dark:text-green-400 mb-1">Uptime</div>
+              <div class="font-bold text-green-700 dark:text-green-300 text-lg">{{ formatUptime(sysInfo.uptime) }}</div>
             </div>
             
-            <div class="p-4 bg-brand-50 rounded-lg border border-brand-100 md:col-span-2">
+            <div class="p-4 bg-brand-50 rounded-lg border border-brand-100 md:col-span-2 dark:bg-blue-900/20 dark:border-blue-800">
               <div class="flex justify-between items-center mb-2">
-                <div class="text-sm font-medium text-brand-600">CPU Usage ({{ sysInfo.cpu_cores }} Cores)</div>
-                <div class="text-xs text-brand-600 font-mono truncate max-w-[150px]" :title="sysInfo.cpu_model">{{ sysInfo.cpu_model }}</div>
+                <div class="text-sm font-medium text-brand-600 dark:text-brand-400">CPU Usage ({{ sysInfo.cpu_cores }} Cores)</div>
+                <div class="text-xs text-brand-600 dark:text-brand-400 font-mono truncate max-w-[150px]" :title="sysInfo.cpu_model">{{ sysInfo.cpu_model }}</div>
               </div>
               <div class="flex items-center gap-3">
-                <div class="text-2xl font-bold text-brand-700 w-20">{{ sysInfo.global_cpu_usage?.toFixed(1) }}%</div>
-                <div class="flex-1 bg-brand-200 rounded-full h-2.5 overflow-hidden">
+                <div class="text-2xl font-bold text-brand-700 dark:text-brand-300 w-20">{{ sysInfo.global_cpu_usage?.toFixed(1) }}%</div>
+                <div class="flex-1 bg-brand-200 rounded-full h-2.5 overflow-hidden dark:bg-brand-800">
                   <div class="bg-brand-500 h-2.5 rounded-full transition-all duration-300" :style="`width: ${Math.min(Math.max(sysInfo.global_cpu_usage||0, 0), 100)}%`"></div>
                 </div>
               </div>
             </div>
             
-            <div class="p-4 bg-purple-50 rounded-lg border border-purple-100 md:col-span-2">
-              <div class="text-sm font-medium text-purple-600 mb-2">Memory (RAM)</div>
+            <div class="p-4 bg-purple-50 rounded-lg border border-purple-100 md:col-span-2 dark:bg-purple-900/20 dark:border-purple-800">
+              <div class="text-sm font-medium text-purple-600 dark:text-purple-400 mb-2">Memory (RAM)</div>
               <div class="flex items-center gap-3">
-                <div class="font-bold text-purple-700 w-32 whitespace-nowrap text-sm">
+                <div class="font-bold text-purple-700 dark:text-purple-300 w-32 whitespace-nowrap text-sm">
                   {{ (sysInfo.used_memory / 1024 / 1024 / 1024).toFixed(2) }} GB / {{ (sysInfo.total_memory / 1024 / 1024 / 1024).toFixed(2) }} GB
                 </div>
-                <div class="flex-1 bg-purple-200 rounded-full h-2.5 overflow-hidden">
+                <div class="flex-1 bg-purple-200 rounded-full h-2.5 overflow-hidden dark:bg-purple-800">
                   <div class="bg-purple-500 h-2.5 rounded-full transition-all duration-300" :style="`width: ${Math.min(sysInfo.used_memory/sysInfo.total_memory*100, 100)}%`"></div>
                 </div>
               </div>
             </div>
             
-            <div class="p-4 bg-amber-50 rounded-lg border border-amber-100 md:col-span-2">
-              <div class="text-sm font-medium text-amber-600 mb-2">Storage (Disks)</div>
+            <div class="p-4 bg-amber-50 rounded-lg border border-amber-100 md:col-span-2 dark:bg-amber-900/20 dark:border-amber-800">
+              <div class="text-sm font-medium text-amber-600 dark:text-amber-400 mb-2">Storage (Disks)</div>
               <div class="space-y-3 max-h-48 overflow-y-auto pr-1">
                 <div v-for="disk in sysInfo.disks" :key="disk.mount_point" class="flex flex-col">
                   <div class="flex justify-between items-center text-xs mb-1" v-if="disk.total_space > 0">
-                    <span class="font-medium text-amber-900 truncate flex-1 pr-2" :title="disk.mount_point">
-                      {{ disk.mount_point }} <span class="text-amber-600 font-normal">({{ disk.name }})</span>
+                    <span class="font-medium text-amber-900 dark:text-amber-100 truncate flex-1 pr-2" :title="disk.mount_point">
+                      {{ disk.mount_point }} <span class="text-amber-600 dark:text-amber-400 font-normal">({{ disk.name }})</span>
                     </span>
-                    <span class="text-amber-700 whitespace-nowrap">
+                    <span class="text-amber-700 dark:text-amber-300 whitespace-nowrap">
                       {{ ((disk.total_space - disk.available_space)/1073741824).toFixed(1) }} GB / {{ (disk.total_space/1073741824).toFixed(1) }} GB
                     </span>
                   </div>
-                  <div class="w-full bg-amber-200 rounded-full h-2 overflow-hidden" v-if="disk.total_space > 0">
+                  <div class="w-full bg-amber-200 rounded-full h-2 overflow-hidden dark:bg-amber-800" v-if="disk.total_space > 0">
                     <div class="bg-amber-500 h-full rounded-full transition-all duration-300" :style="`width: ${Math.min(((disk.total_space-disk.available_space)/disk.total_space)*100, 100)}%`"></div>
                   </div>
                 </div>
@@ -375,28 +395,28 @@ onUnmounted(() => {
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
             <div>
               <h2 class="card-title mb-1"><Activity class="w-5 h-5 text-brand-500" /> Historical Performance</h2>
-              <p class="text-xs text-slate-500">Recorded every 5 minutes. Helps identify unexpected performance jumps.</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Recorded every 5 minutes. Helps identify unexpected performance jumps.</p>
             </div>
             
             <!-- Time Range Filters -->
-            <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg">
-              <button @click="setTimeRange('24h')" :class="historyTimeRange === '24h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">24h</button>
-              <button @click="setTimeRange('12h')" :class="historyTimeRange === '12h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">12h</button>
-              <button @click="setTimeRange('6h')" :class="historyTimeRange === '6h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">6h</button>
-              <button @click="setTimeRange('3h')" :class="historyTimeRange === '3h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">3h</button>
-              <button @click="setTimeRange('1h')" :class="historyTimeRange === '1h' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">1h</button>
+            <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg dark:bg-slate-800">
+              <button @click="setTimeRange('24h')" :class="historyTimeRange === '24h' ? 'bg-white shadow-sm text-slate-800 dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">24h</button>
+              <button @click="setTimeRange('12h')" :class="historyTimeRange === '12h' ? 'bg-white shadow-sm text-slate-800 dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">12h</button>
+              <button @click="setTimeRange('6h')" :class="historyTimeRange === '6h' ? 'bg-white shadow-sm text-slate-800 dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">6h</button>
+              <button @click="setTimeRange('3h')" :class="historyTimeRange === '3h' ? 'bg-white shadow-sm text-slate-800 dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">3h</button>
+              <button @click="setTimeRange('1h')" :class="historyTimeRange === '1h' ? 'bg-white shadow-sm text-slate-800 dark:bg-slate-700 dark:text-slate-100' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all">1h</button>
             </div>
           </div>
           
-          <div v-if="historyData.length < 2" class="flex flex-col items-center justify-center p-8 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-            <Clock class="w-8 h-8 mb-2 opacity-50 text-slate-400" />
+          <div v-if="historyData.length < 2" class="flex flex-col items-center justify-center p-8 text-slate-400 dark:text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200 dark:bg-slate-800/50 dark:border-slate-700">
+            <Clock class="w-8 h-8 mb-2 opacity-50" />
             <p class="text-sm">Not enough data available for the selected time range ({{ historyTimeRange }}).</p>
             <p class="text-xs mt-1">Chart requires at least 2 data points (10 minutes of recording).</p>
           </div>
           <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- CPU Chart -->
             <div class="h-48 relative w-full">
-              <h3 class="text-sm font-semibold text-slate-700 mb-2">CPU Usage</h3>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">CPU Usage</h3>
               <div class="absolute inset-0 top-8">
                 <Line :data="cpuChartData" :options="chartOptions" />
               </div>
@@ -404,7 +424,7 @@ onUnmounted(() => {
             
             <!-- Mem Chart -->
             <div class="h-48 relative w-full">
-              <h3 class="text-sm font-semibold text-slate-700 mb-2">Memory Usage</h3>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Memory Usage</h3>
               <div class="absolute inset-0 top-8">
                 <Line :data="memChartData" :options="{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, max: 100 } } }" />
               </div>
@@ -412,7 +432,7 @@ onUnmounted(() => {
             
             <!-- Disk Chart -->
             <div class="h-48 relative w-full">
-              <h3 class="text-sm font-semibold text-slate-700 mb-2">Disk Usage</h3>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Disk Usage</h3>
               <div class="absolute inset-0 top-8">
                 <Line :data="diskChartData" :options="{ ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, max: 100 } } }" />
               </div>
@@ -420,14 +440,14 @@ onUnmounted(() => {
             
             <!-- Network Bandwidth Chart -->
             <div class="h-48 relative w-full">
-              <h3 class="text-sm font-semibold text-slate-700 mb-2">Network (Mbps)</h3>
+              <h3 class="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Network (Mbps)</h3>
               <div class="absolute inset-0 top-8">
-                <Line :data="netChartData" :options="{ ...chartOptions, plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 10, usePointStyle: true, font: {size: 10} } }, tooltip: chartOptions.plugins.tooltip }, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, max: undefined, ticks: { ...chartOptions.scales.y.ticks, callback: (v) => v + ' Mbps' } } } }" />
+                <Line :data="netChartData" :options="{ ...chartOptions, plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 10, usePointStyle: true, font: {size: 10}, color: isDark ? '#e2e8f0' : '#1e293b' } }, tooltip: chartOptions.plugins.tooltip }, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, max: undefined, ticks: { ...chartOptions.scales.y.ticks, callback: (v) => v + ' Mbps' } } } }" />
               </div>
             </div>
           </div>
         </div>
-        <div class="card flex flex-col items-center justify-center p-8 text-slate-400" v-else>
+        <div class="card flex flex-col items-center justify-center p-8 text-slate-400 dark:text-slate-500" v-else>
           <Activity class="w-8 h-8 mb-2 opacity-50" />
           <p class="text-sm">Not enough historical data collected yet.</p>
           <p class="text-xs mt-1">Data is recorded every 5 minutes.</p>
@@ -438,4 +458,3 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
-

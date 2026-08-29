@@ -140,25 +140,25 @@ const handleReboot = () => {
       <h2 class="card-title"><Settings class="w-5 h-5 text-brand-500" /> Global Configuration</h2>
       <p class="text-sm text-slate-500 mb-6">Add backend servers to monitor. Credentials are verified immediately via PAM.</p>
 
-      <div class="p-5 border border-slate-200 bg-slate-50 rounded-lg space-y-4">
-        <h3 class="text-sm font-semibold">Add New Backend Node</h3>
+      <div class="p-5 border border-slate-200 bg-slate-50 rounded-lg space-y-4 dark:border-slate-700 dark:bg-slate-800">
+        <h3 class="text-sm font-semibold dark:text-slate-200">Add New Backend Node</h3>
 
         <!-- Error banner -->
-        <div v-if="addError" class="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">
+        <div v-if="addError" class="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300">
           <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
           <span>{{ addError }}</span>
         </div>
 
         <!-- Server Name -->
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-slate-700">Server Name / Alias</label>
+          <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Server Name / Alias</label>
           <input v-model="newName" type="text" placeholder="e.g. VPS Singapore"
             class="input-field" :disabled="isAdding" />
         </div>
 
         <!-- IP / URL -->
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-slate-700">Backend IP / URL</label>
+          <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Backend IP / URL</label>
           <input v-model="newUrl" type="text" placeholder="100.127.55.109:8080"
             class="input-field" :disabled="isAdding" />
           <p class="text-xs text-slate-400">Cukup masukkan IP:Port — http:// akan ditambahkan otomatis</p>
@@ -167,7 +167,7 @@ const handleReboot = () => {
         <!-- Username + Password -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div class="flex flex-col gap-1">
-            <label class="text-sm font-medium text-slate-700">Username</label>
+            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Username</label>
             <div class="relative">
               <User class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input v-model="newUser" type="text" placeholder="e.g. root, ubuntu"
@@ -175,7 +175,7 @@ const handleReboot = () => {
             </div>
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-sm font-medium text-slate-700">Password</label>
+            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
             <div class="relative">
               <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input v-model="newPass" type="password" placeholder="OS user password"
@@ -199,20 +199,20 @@ const handleReboot = () => {
       <h2 class="card-title"><Settings class="w-5 h-5 text-brand-500" /> Server Preferences</h2>
 
       <div class="space-y-4 mb-6">
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border border-slate-200 rounded-lg bg-slate-50 gap-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg gap-4 dark:border-slate-700 dark:bg-slate-800/50">
           <div>
-            <div class="font-medium text-slate-800">Rename Server Alias</div>
-            <div class="text-xs text-slate-500">Change how this server appears on the home screen</div>
+            <div class="font-medium text-slate-800 dark:text-slate-200">Rename Server Alias</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Change how this server appears on the home screen</div>
           </div>
           <button @click="handleRenameServer" class="btn-outline whitespace-nowrap">
             <Edit2 class="w-4 h-4" /> Rename
           </button>
         </div>
 
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border border-slate-200 rounded-lg bg-slate-50 gap-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg gap-4 dark:border-slate-700 dark:bg-slate-800/50">
           <div>
-            <div class="font-medium text-slate-800">Remove Server</div>
-            <div class="text-xs text-slate-500">Remove this server from your dashboard list</div>
+            <div class="font-medium text-slate-800 dark:text-slate-200">Remove Server</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Remove this server from your dashboard list</div>
           </div>
           <button @click="handleRemoveServer" class="btn-destructive whitespace-nowrap">
             <Trash2 class="w-4 h-4" /> Remove
@@ -222,25 +222,25 @@ const handleReboot = () => {
     </section>
 
     <!-- ── Danger Zone (per-server) ───────────────────── -->
-    <section class="card border-red-200" v-if="route.params.id">
-      <h2 class="card-title text-red-600"><Power class="w-5 h-5" /> Danger Zone</h2>
-      <p class="text-sm text-slate-500 mb-6">Actions below affect this specific backend server OS ({{ getActiveServerUrl() }}).</p>
+    <section class="card border-red-200 dark:border-red-900/50" v-if="route.params.id">
+      <h2 class="card-title text-red-600 dark:text-red-400"><Power class="w-5 h-5" /> Danger Zone</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Actions below affect this specific backend server OS ({{ getActiveServerUrl() }}).</p>
 
       <div class="space-y-4">
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border border-slate-200 rounded-lg bg-slate-50 gap-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg gap-4 dark:border-slate-700 dark:bg-slate-800/50">
           <div>
-            <div class="font-medium text-slate-800">Update Dashboard Backend</div>
-            <div class="text-xs text-slate-500">Run git pull &amp; cargo build --release remotely</div>
+            <div class="font-medium text-slate-800 dark:text-slate-200">Update Dashboard Backend</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400">Run git pull &amp; cargo build --release remotely</div>
           </div>
           <button @click="handleUpdate" class="btn-outline whitespace-nowrap">
             <RefreshCw class="w-4 h-4" /> Update Backend
           </button>
         </div>
 
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border border-red-200 bg-red-50 rounded-lg gap-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 border rounded-lg gap-4 dark:border-red-900/30 dark:bg-red-900/10">
           <div>
-            <div class="font-medium text-red-800">Reboot Host</div>
-            <div class="text-xs text-red-600">Reboot the physical operating system</div>
+            <div class="font-medium text-red-800 dark:text-red-400">Reboot Host</div>
+            <div class="text-xs text-red-600 dark:text-red-500">Reboot the physical operating system</div>
           </div>
           <button @click="handleReboot" class="btn-destructive whitespace-nowrap">
             <Power class="w-4 h-4" /> Reboot Server

@@ -3,11 +3,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
+import { useThemeStore } from '../stores/themeStore'
 import { Users, UserPlus, Key, Shield, Trash2, Loader2, X } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
+const { isDark } = useThemeStore()
 
 const users = ref([])
 const groups = ref([])
@@ -223,23 +225,23 @@ onMounted(fetchUsersAndGroups)
 
     <!-- Modal: Add User -->
     <Teleport to="body">
-      <div v-if="showAddModal" class="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-          <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <h3 class="font-bold flex items-center gap-2"><UserPlus class="w-4 h-4 text-brand-500"/> Add New User</h3>
-            <button @click="showAddModal = false" class="text-slate-400 hover:text-slate-600"><X class="w-4 h-4"/></button>
+      <div v-if="showAddModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
+        <div class="rounded-xl shadow-xl w-full max-w-md overflow-hidden" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <div class="p-4 border-b flex justify-between items-center" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
+            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><UserPlus class="w-4 h-4 text-brand-500"/> Add New User</h3>
+            <button @click="showAddModal = false" class="transition-colors" :class="isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'"><X class="w-4 h-4"/></button>
           </div>
           <div class="p-5 space-y-4">
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1">Username</label>
+              <label class="block text-xs font-semibold mb-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Username</label>
               <input v-model="formUser.username" type="text" class="input-field" placeholder="e.g. johndoe">
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1">Password</label>
+              <label class="block text-xs font-semibold mb-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Password</label>
               <input v-model="formUser.password" type="password" class="input-field" placeholder="Leave empty for no password">
             </div>
             <div class="pt-2 flex justify-end gap-2">
-              <button @click="showAddModal = false" class="btn-secondary">Cancel</button>
+              <button @click="showAddModal = false" class="btn-outline">Cancel</button>
               <button @click="handleAddUser" class="btn-primary">Create User</button>
             </div>
           </div>
@@ -249,20 +251,20 @@ onMounted(fetchUsersAndGroups)
 
     <!-- Modal: Change Password -->
     <Teleport to="body">
-      <div v-if="showPassModal" class="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-          <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <h3 class="font-bold flex items-center gap-2"><Key class="w-4 h-4 text-amber-500"/> Change Password</h3>
-            <button @click="showPassModal = false" class="text-slate-400 hover:text-slate-600"><X class="w-4 h-4"/></button>
+      <div v-if="showPassModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
+        <div class="rounded-xl shadow-xl w-full max-w-md overflow-hidden" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <div class="p-4 border-b flex justify-between items-center" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
+            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><Key class="w-4 h-4 text-amber-500"/> Change Password</h3>
+            <button @click="showPassModal = false" class="transition-colors" :class="isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'"><X class="w-4 h-4"/></button>
           </div>
           <div class="p-5 space-y-4">
-            <p class="text-sm text-slate-600">Set new password for <strong class="text-slate-800">{{ formPass.username }}</strong>.</p>
+            <p class="text-sm" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Set new password for <strong :class="isDark ? 'text-slate-100' : 'text-slate-800'">{{ formPass.username }}</strong>.</p>
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1">New Password</label>
+              <label class="block text-xs font-semibold mb-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">New Password</label>
               <input v-model="formPass.password" type="password" class="input-field" placeholder="Enter new password" @keydown.enter="handleChangePassword">
             </div>
             <div class="pt-2 flex justify-end gap-2">
-              <button @click="showPassModal = false" class="btn-secondary">Cancel</button>
+              <button @click="showPassModal = false" class="btn-outline">Cancel</button>
               <button @click="handleChangePassword" class="btn-warning !text-amber-900">Update Password</button>
             </div>
           </div>
@@ -272,24 +274,24 @@ onMounted(fetchUsersAndGroups)
 
     <!-- Modal: Manage Groups -->
     <Teleport to="body">
-      <div v-if="showGroupModal" class="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">
-          <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-            <h3 class="font-bold flex items-center gap-2"><Shield class="w-4 h-4 text-blue-500"/> Manage Groups</h3>
-            <button @click="showGroupModal = false" class="text-slate-400 hover:text-slate-600"><X class="w-4 h-4"/></button>
+      <div v-if="showGroupModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
+        <div class="rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <div class="p-4 border-b flex justify-between items-center shrink-0" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
+            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><Shield class="w-4 h-4 text-blue-500"/> Manage Groups</h3>
+            <button @click="showGroupModal = false" class="transition-colors" :class="isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'"><X class="w-4 h-4"/></button>
           </div>
           <div class="p-5 overflow-y-auto">
-            <p class="text-sm text-slate-600 mb-4">Select secondary groups for <strong class="text-slate-800">{{ formGroup.username }}</strong>.</p>
+            <p class="text-sm mb-4" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Select secondary groups for <strong :class="isDark ? 'text-slate-100' : 'text-slate-800'">{{ formGroup.username }}</strong>.</p>
             
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <label v-for="g in groups" :key="g.name" class="flex items-center gap-2 p-2 border border-slate-200 rounded hover:bg-slate-50 cursor-pointer transition-colors" :class="{'bg-blue-50 border-blue-200': formGroup.selected.includes(g.name)}">
-                <input type="checkbox" :checked="formGroup.selected.includes(g.name)" @change="toggleGroupSelection(g.name)" class="rounded text-brand-600 focus:ring-brand-500">
-                <span class="text-xs font-mono text-slate-700 truncate" :title="g.name">{{ g.name }}</span>
+              <label v-for="g in groups" :key="g.name" class="flex items-center gap-2 p-2 border rounded cursor-pointer transition-colors" :class="[isDark ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-50', formGroup.selected.includes(g.name) ? (isDark ? 'bg-blue-900/20 border-blue-800' : 'bg-blue-50 border-blue-200') : '']">
+                <input type="checkbox" :checked="formGroup.selected.includes(g.name)" @change="toggleGroupSelection(g.name)" class="rounded focus:ring-brand-500" :class="isDark ? 'bg-slate-800 border-slate-600' : 'text-brand-600'">
+                <span class="text-xs font-mono truncate" :class="isDark ? 'text-slate-300' : 'text-slate-700'" :title="g.name">{{ g.name }}</span>
               </label>
             </div>
           </div>
-          <div class="p-4 border-t border-slate-100 bg-slate-50 shrink-0 flex justify-end gap-2">
-            <button @click="showGroupModal = false" class="btn-secondary">Cancel</button>
+          <div class="p-4 border-t flex justify-end gap-2 shrink-0" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
+            <button @click="showGroupModal = false" class="btn-outline">Cancel</button>
             <button @click="handleUpdateGroups" class="btn-primary">Save Groups</button>
           </div>
         </div>

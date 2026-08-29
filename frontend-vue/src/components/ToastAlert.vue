@@ -1,9 +1,11 @@
 <script setup>
 import { computed } from 'vue'
 import { useToastStore } from '../stores/toastStore'
+import { useThemeStore } from '../stores/themeStore'
 import { AlertCircle, CheckCircle2, Info, AlertTriangle, X } from 'lucide-vue-next'
 
 const { state, closeToast } = useToastStore()
+const { isDark } = useThemeStore()
 
 const iconComponent = computed(() => {
   switch (state.value.type) {
@@ -26,23 +28,43 @@ const iconColor = computed(() => {
 })
 
 const bgClass = computed(() => {
-  return 'bg-white border border-slate-200'
+  return isDark.value ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-slate-200'
+})
+
+const confirmBgClass = computed(() => {
+  return isDark.value ? 'bg-slate-800' : 'bg-white'
+})
+
+const confirmHeaderClass = computed(() => {
+  return isDark.value ? 'text-slate-100' : 'text-slate-800'
+})
+
+const confirmMsgClass = computed(() => {
+  return isDark.value ? 'text-slate-300' : 'text-slate-600'
+})
+
+const footerBgClass = computed(() => {
+  return isDark.value ? 'bg-slate-700/50 border-slate-700' : 'bg-slate-50 border-slate-100'
+})
+
+const closeColor = computed(() => {
+  return isDark.value ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'
 })
 </script>
 
 <template>
   <div v-if="state.isOpen && state.type === 'confirm'" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-    <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div class="rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200" :class="confirmBgClass">
       <div class="p-5 flex gap-4">
         <div class="shrink-0 mt-0.5">
           <component :is="iconComponent" class="w-6 h-6" :class="iconColor" />
         </div>
         <div class="flex-1">
-          <h3 class="text-lg font-bold text-slate-800">{{ state.title }}</h3>
-          <p class="text-slate-600 mt-2 text-sm leading-relaxed whitespace-pre-wrap">{{ state.message }}</p>
+          <h3 class="text-lg font-bold" :class="confirmHeaderClass">{{ state.title }}</h3>
+          <p class="mt-2 text-sm leading-relaxed whitespace-pre-wrap" :class="confirmMsgClass">{{ state.message }}</p>
         </div>
       </div>
-      <div class="bg-slate-50 px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
+      <div class="flex justify-end gap-2 px-5 py-4 border-t" :class="footerBgClass">
         <button @click="state.onCancel" class="btn-outline">Cancel</button>
         <button @click="state.onConfirm" class="btn-primary" :class="state.title.includes('DANGER') ? '!bg-red-600 hover:!bg-red-700' : ''">Confirm</button>
       </div>
@@ -53,10 +75,10 @@ const bgClass = computed(() => {
     <div class="rounded-lg shadow-lg p-4 flex gap-3 items-start" :class="bgClass">
       <component :is="iconComponent" class="w-5 h-5 shrink-0 mt-0.5" :class="iconColor" />
       <div class="flex-1 min-w-0">
-        <h4 class="font-semibold text-sm text-slate-800">{{ state.title }}</h4>
-        <p class="text-sm text-slate-600 mt-1 break-words leading-relaxed whitespace-pre-wrap">{{ state.message }}</p>
+        <h4 class="font-semibold text-sm" :class="isDark ? 'text-slate-100' : 'text-slate-800'">{{ state.title }}</h4>
+        <p class="text-sm mt-1 break-words leading-relaxed whitespace-pre-wrap" :class="isDark ? 'text-slate-300' : 'text-slate-600'">{{ state.message }}</p>
       </div>
-      <button @click="closeToast" class="shrink-0 text-slate-400 hover:text-slate-600 p-1 -mr-2 -mt-2">
+      <button @click="closeToast" class="shrink-0 p-1 -mr-2 -mt-2" :class="closeColor">
         <X class="w-4 h-4" />
       </button>
     </div>

@@ -58,21 +58,21 @@ onUnmounted(() => {
 <template>
   <div v-if="currentServer" class="space-y-6">
     <!-- Server Context Header with Navigation -->
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden dark:bg-slate-800 dark:border-slate-700">
       <!-- Top info bar -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-slate-100 bg-slate-50/50">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
         <div class="flex items-center gap-4">
-          <RouterLink to="/" @click="handleGoHome" class="p-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors shadow-sm">
+          <RouterLink to="/" @click="handleGoHome" class="p-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:hover:bg-slate-600 dark:text-slate-300">
             <ArrowLeft class="w-5 h-5" />
           </RouterLink>
           <div>
             <div class="flex items-center gap-2">
-              <h2 class="font-bold text-lg text-slate-800 leading-tight">{{ currentServer.name }}</h2>
-              <span v-if="getUsername(currentServer.id)" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+              <h2 class="font-bold text-lg text-slate-800 dark:text-slate-100 leading-tight">{{ currentServer.name }}</h2>
+              <span v-if="getUsername(currentServer.id)" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                 <User class="w-3 h-3" />{{ getUsername(currentServer.id) }}
               </span>
             </div>
-            <div class="text-xs text-slate-500 font-mono">{{ currentServer.url }}</div>
+            <div class="text-xs text-slate-500 dark:text-slate-400 font-mono">{{ currentServer.url }}</div>
           </div>
         </div>
 
@@ -82,7 +82,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Feature Tabs -->
-      <div class="px-3 pb-1 pt-2 bg-white border-t border-slate-100">
+      <div class="px-3 pb-1 pt-2 bg-white border-t border-slate-100 dark:bg-slate-800 dark:border-slate-700">
         <nav class="flex flex-wrap gap-x-2 sm:gap-x-4 gap-y-1" aria-label="Tabs">
           <RouterLink :to="`/server/${currentServer.id}/dashboard`" class="tab-item" active-class="tab-active">
             <LayoutDashboard class="w-4 h-4" /> System
@@ -100,10 +100,10 @@ onUnmounted(() => {
             <Box class="w-4 h-4" /> Containers
           </RouterLink>
           <RouterLink :to="`/server/${currentServer.id}/users`" class="tab-item" active-class="tab-active">
-            <Users class="w-4 h-4" /> Users &amp; Groups
+            <Users class="w-4 h-4" /> Users & Groups
           </RouterLink>
           <RouterLink :to="`/server/${currentServer.id}/ports`" class="tab-item" active-class="tab-active">
-            <ShieldCheck class="w-4 h-4" /> Network &amp; Security
+            <ShieldCheck class="w-4 h-4" /> Network & Security
           </RouterLink>
           <RouterLink :to="`/server/${currentServer.id}/cloudflare`" class="tab-item" active-class="tab-active">
             <Cloud class="w-4 h-4" /> Cloudflare
@@ -140,7 +140,7 @@ onUnmounted(() => {
     />
   </div>
 
-  <div v-else class="text-center py-12 text-slate-500 flex flex-col items-center justify-center">
+  <div v-else class="text-center py-12 text-slate-500 dark:text-slate-400 flex flex-col items-center justify-center">
     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600 mb-4"></div>
     Loading server context...
   </div>

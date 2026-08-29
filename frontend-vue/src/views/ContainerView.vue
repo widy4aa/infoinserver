@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
+import { useThemeStore } from '../stores/themeStore'
 import {
   Box, Play, Square, RefreshCw, Trash2, FileText, Plus,
   Layers, Settings2, Terminal, ChevronDown, ChevronRight,
@@ -13,6 +14,7 @@ import {
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showConfirm, showToast } = useToastStore()
+const { isDark } = useThemeStore()
 
 // ── Active Tab ─────────────────────────────────────────────────────
 const activeTab = ref('containers') // 'containers' | 'compose' | 'deploy'
@@ -371,16 +373,16 @@ const toggleProject = (name) => {
 }
 
 const stateColor = (state) => {
-  if (state === 'running') return 'text-green-700 bg-green-100'
-  if (state === 'exited' || state === 'stopped') return 'text-slate-600 bg-slate-100'
-  if (state === 'paused') return 'text-amber-700 bg-amber-100'
-  return 'text-slate-500 bg-slate-100'
+  if (state === 'running') return isDark.value ? 'text-green-300 bg-green-900/30' : 'text-green-700 bg-green-100'
+  if (state === 'exited' || state === 'stopped') return isDark.value ? 'text-slate-400 bg-slate-800' : 'text-slate-600 bg-slate-100'
+  if (state === 'paused') return isDark.value ? 'text-amber-300 bg-amber-900/30' : 'text-amber-700 bg-amber-100'
+  return isDark.value ? 'text-slate-400 bg-slate-800' : 'text-slate-500 bg-slate-100'
 }
 
 const projectStatusColor = (status) => {
-  if (status === 'running') return 'text-green-700 bg-green-100 border-green-200'
-  if (status === 'partial') return 'text-amber-700 bg-amber-100 border-amber-200'
-  return 'text-slate-600 bg-slate-100 border-slate-200'
+  if (status === 'running') return isDark.value ? 'text-green-300 bg-green-900/30 border-green-800' : 'text-green-700 bg-green-100 border-green-200'
+  if (status === 'partial') return isDark.value ? 'text-amber-300 bg-amber-900/30 border-amber-800' : 'text-amber-700 bg-amber-100 border-amber-200'
+  return isDark.value ? 'text-slate-400 bg-slate-800 border-slate-700' : 'text-slate-600 bg-slate-100 border-slate-200'
 }
 
 onMounted(async () => {
@@ -444,8 +446,8 @@ onUnmounted(() => clearInterval(pollInterval))
           @click="activeTab = tab.id"
           class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors"
           :class="activeTab === tab.id
-            ? 'border-brand-500 text-brand-700 bg-white'
-            : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100'"
+            ? 'border-brand-500 text-brand-700 bg-white dark:bg-slate-800 dark:border-brand-400 dark:text-brand-300'
+            : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800'"
         >
           <component :is="tab.icon" class="w-4 h-4" />
           {{ tab.label }}
@@ -461,7 +463,7 @@ onUnmounted(() => clearInterval(pollInterval))
           <!-- Toolbar -->
           <div class="flex flex-wrap gap-2 items-center">
             <input v-model="containerSearch" type="text" placeholder="Search name / image / project..." class="input-field max-w-xs text-sm" />
-            <label class="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer select-none">
+            <label class="flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300 cursor-pointer select-none">
               <input v-model="showOnlyRunning" type="checkbox" class="rounded" />
               Running only
             </label>
@@ -505,40 +507,40 @@ onUnmounted(() => clearInterval(pollInterval))
                   </td>
                   <td class="table-td">
                     <div v-if="c.ports.length" class="flex flex-wrap gap-0.5">
-                      <span v-for="p in c.ports" :key="p" class="text-[10px] font-mono bg-slate-100 px-1 rounded">{{ p }}</span>
+                      <span v-for="p in c.ports" :key="p" class="text-[10px] font-mono bg-slate-100 dark:bg-slate-700 px-1 rounded">{{ p }}</span>
                     </div>
-                    <span v-else class="text-xs text-slate-300">—</span>
+                    <span v-else class="text-xs text-slate-300 dark:text-slate-600">—</span>
                   </td>
                   <td class="table-td">
-                    <span v-if="c.compose_project" class="inline-flex items-center gap-1 text-[10px] font-medium bg-brand-50 text-brand-700 border border-brand-100 px-1.5 py-0.5 rounded-full">
+                    <span v-if="c.compose_project" class="inline-flex items-center gap-1 text-[10px] font-medium bg-brand-50 text-brand-700 border border-brand-100 dark:bg-brand-900/30 dark:text-brand-300 dark:border-brand-800 px-1.5 py-0.5 rounded-full">
                       <Layers class="w-2.5 h-2.5" />{{ c.compose_project }}
                     </span>
-                    <span v-else class="text-xs text-slate-300">—</span>
+                    <span v-else class="text-xs text-slate-300 dark:text-slate-600">—</span>
                   </td>
                   <td class="table-td text-right">
                     <div class="flex items-center justify-end gap-1 flex-wrap">
                       <button @click="performAction('start', c.id, c.name)" :disabled="c.state === 'running'"
-                        class="p-1.5 rounded text-green-600 hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed" title="Start">
+                        class="p-1.5 rounded text-green-600 hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-900/30 disabled:opacity-30 disabled:cursor-not-allowed" title="Start">
                         <Play class="w-3.5 h-3.5" />
                       </button>
                       <button @click="performAction('stop', c.id, c.name)" :disabled="c.state !== 'running'"
-                        class="p-1.5 rounded text-amber-600 hover:bg-amber-50 disabled:opacity-30 disabled:cursor-not-allowed" title="Stop">
+                        class="p-1.5 rounded text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/30 disabled:opacity-30 disabled:cursor-not-allowed" title="Stop">
                         <Square class="w-3.5 h-3.5" />
                       </button>
                       <button @click="performAction('restart', c.id, c.name)"
-                        class="p-1.5 rounded text-blue-600 hover:bg-blue-50" title="Restart">
+                        class="p-1.5 rounded text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30" title="Restart">
                         <RefreshCw class="w-3.5 h-3.5" />
                       </button>
                       <button @click="viewLogs(c.id, c.name)"
-                        class="p-1.5 rounded text-slate-600 hover:bg-slate-100" title="Logs">
+                        class="p-1.5 rounded text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700" title="Logs">
                         <Terminal class="w-3.5 h-3.5" />
                       </button>
                       <button @click="viewInspect(c.id, c.name)"
-                        class="p-1.5 rounded text-slate-600 hover:bg-slate-100" title="Inspect">
+                        class="p-1.5 rounded text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700" title="Inspect">
                         <ZoomIn class="w-3.5 h-3.5" />
                       </button>
                       <button @click="performAction('rm', c.id, c.name)"
-                        class="p-1.5 rounded text-red-500 hover:bg-red-50" title="Delete">
+                        class="p-1.5 rounded text-red-500 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30" title="Delete">
                         <Trash2 class="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -571,74 +573,75 @@ onUnmounted(() => clearInterval(pollInterval))
           <div v-else class="space-y-2">
             <!-- Project cards -->
             <div v-for="project in composeProjects" :key="project.name"
-              class="border rounded-lg overflow-hidden"
-              :class="project.status === 'running' ? 'border-green-200' : project.status === 'partial' ? 'border-amber-200' : 'border-slate-200'"
+              class="border rounded-lg overflow-hidden transition-colors"
+              :class="project.status === 'running' ? 'border-green-200 dark:border-green-800' : project.status === 'partial' ? 'border-amber-200 dark:border-amber-800' : 'border-slate-200 dark:border-slate-700'"
             >
               <!-- Project header -->
-              <div class="flex items-center gap-3 px-4 py-3 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+              <div class="flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors"
+                :class="isDark ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'"
                 @click="toggleProject(project.name)">
-                <component :is="expandedProjects.has(project.name) ? ChevronDown : ChevronRight" class="w-4 h-4 text-slate-400 flex-shrink-0" />
-                <Layers class="w-4 h-4 text-brand-500 flex-shrink-0" />
+                <component :is="expandedProjects.has(project.name) ? ChevronDown : ChevronRight" class="w-4 h-4 flex-shrink-0" :class="isDark ? 'text-slate-500' : 'text-slate-400'" />
+                <Layers class="w-4 h-4 flex-shrink-0" :class="isDark ? 'text-brand-400' : 'text-brand-500'" />
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 flex-wrap">
-                    <span class="font-semibold text-slate-800">{{ project.name }}</span>
+                    <span class="font-semibold" :class="isDark ? 'text-slate-200' : 'text-slate-800'">{{ project.name }}</span>
                     <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border" :class="projectStatusColor(project.status)">
                       {{ project.status.toUpperCase() }}
                     </span>
-                    <span class="text-[10px] text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded">{{ project.source }}</span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded" :class="isDark ? 'text-slate-400 bg-slate-700' : 'text-slate-400 bg-slate-200'">{{ project.source }}</span>
                   </div>
-                  <div class="text-xs text-slate-400 mt-0.5">{{ project.services.length }} service(s)</div>
+                  <div class="text-xs mt-0.5" :class="isDark ? 'text-slate-500' : 'text-slate-400'">{{ project.services.length }} service(s)</div>
                 </div>
                 <!-- Project actions -->
                 <div class="flex items-center gap-1 flex-shrink-0" @click.stop>
-                  <button @click="composeAction('restart', project.name)" class="p-1.5 rounded text-blue-600 hover:bg-blue-50" title="Restart">
+                  <button @click="composeAction('restart', project.name)" class="p-1.5 rounded" :class="isDark ? 'text-blue-400 hover:bg-blue-900/30' : 'text-blue-600 hover:bg-blue-50'" title="Restart">
                     <RefreshCw class="w-3.5 h-3.5" />
                   </button>
-                  <button v-if="project.source === 'managed'" @click="composeAction('rebuild', project.name)" class="p-1.5 rounded text-indigo-600 hover:bg-indigo-50" title="Rebuild (force recreate)">
+                  <button v-if="project.source === 'managed'" @click="composeAction('rebuild', project.name)" class="p-1.5 rounded" :class="isDark ? 'text-indigo-400 hover:bg-indigo-900/30' : 'text-indigo-600 hover:bg-indigo-50'" title="Rebuild (force recreate)">
                     <RotateCcw class="w-3.5 h-3.5" />
                   </button>
-                  <button @click="viewComposeLogs(project.name)" class="p-1.5 rounded text-slate-600 hover:bg-slate-100" title="View Logs">
+                  <button @click="viewComposeLogs(project.name)" class="p-1.5 rounded" :class="isDark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'" title="View Logs">
                     <Terminal class="w-3.5 h-3.5" />
                   </button>
-                  <button v-if="project.source === 'managed'" @click="openYamlModal(project.name)" class="p-1.5 rounded text-slate-600 hover:bg-slate-100" title="View/Edit YAML">
+                  <button v-if="project.source === 'managed'" @click="openYamlModal(project.name)" class="p-1.5 rounded" :class="isDark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'" title="View/Edit YAML">
                     <FileText class="w-3.5 h-3.5" />
                   </button>
-                  <button @click="composeAction('stop', project.name)" class="p-1.5 rounded text-amber-600 hover:bg-amber-50" title="Stop (down)">
+                  <button @click="composeAction('stop', project.name)" class="p-1.5 rounded" :class="isDark ? 'text-amber-400 hover:bg-amber-900/30' : 'text-amber-600 hover:bg-amber-50'" title="Stop (down)">
                     <Square class="w-3.5 h-3.5" />
                   </button>
-                  <button @click="deleteCompose(project.name)" class="p-1.5 rounded text-red-500 hover:bg-red-50" title="Delete Project">
+                  <button @click="deleteCompose(project.name)" class="p-1.5 rounded" :class="isDark ? 'text-red-400 hover:bg-red-900/30' : 'text-red-500 hover:bg-red-50'" title="Delete Project">
                     <Trash2 class="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
               <!-- Services expanded -->
-              <div v-if="expandedProjects.has(project.name)" class="divide-y divide-slate-100">
-                <div v-if="project.services.length === 0" class="px-4 py-3 text-sm text-slate-400 italic">
+              <div v-if="expandedProjects.has(project.name)" class="divide-y" :class="isDark ? 'divide-slate-700' : 'divide-slate-100'">
+                <div v-if="project.services.length === 0" class="px-4 py-3 text-sm italic" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
                   No running services detected.
                 </div>
                 <div v-for="svc in project.services" :key="svc.name"
-                  class="px-4 py-2.5 flex items-center gap-3 hover:bg-slate-50">
+                  class="px-4 py-2.5 flex items-center gap-3" :class="isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'">
                   <div class="w-2 h-2 rounded-full flex-shrink-0" :class="svc.state === 'running' ? 'bg-green-500' : 'bg-slate-300'"></div>
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2">
-                      <span class="text-sm font-medium text-slate-700">{{ svc.name }}</span>
+                      <span class="text-sm font-medium" :class="isDark ? 'text-slate-300' : 'text-slate-700'">{{ svc.name }}</span>
                       <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold" :class="stateColor(svc.state)">{{ svc.state }}</span>
                     </div>
-                    <div class="text-xs text-slate-400 font-mono truncate">{{ svc.image }}</div>
+                    <div class="text-xs font-mono truncate" :class="isDark ? 'text-slate-500' : 'text-slate-400'">{{ svc.image }}</div>
                     <div v-if="svc.ports.length" class="flex gap-1 mt-0.5 flex-wrap">
-                      <span v-for="p in svc.ports" :key="p" class="text-[10px] font-mono bg-slate-100 px-1 rounded">{{ p }}</span>
+                      <span v-for="p in svc.ports" :key="p" class="text-[10px] font-mono px-1 rounded" :class="isDark ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-700'">{{ p }}</span>
                     </div>
                   </div>
                   <!-- Service actions -->
                   <div class="flex items-center gap-1 flex-shrink-0">
-                    <button @click="viewComposeLogs(project.name, svc.name)" class="p-1 rounded text-slate-500 hover:bg-slate-100" title="Service Logs">
+                    <button @click="viewComposeLogs(project.name, svc.name)" class="p-1 rounded" :class="isDark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-100'" title="Service Logs">
                       <Terminal class="w-3.5 h-3.5" />
                     </button>
-                    <button v-if="project.source === 'managed'" @click="openScaleModal(project.name, svc.name, 1)" class="p-1 rounded text-slate-500 hover:bg-slate-100" title="Scale">
+                    <button v-if="project.source === 'managed'" @click="openScaleModal(project.name, svc.name, 1)" class="p-1 rounded" :class="isDark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-100'" title="Scale">
                       <Scaling class="w-3.5 h-3.5" />
                     </button>
-                    <button v-if="svc.container_id" @click="viewLogs(svc.container_id, svc.name)" class="p-1 rounded text-slate-500 hover:bg-slate-100" title="Container Logs">
+                    <button v-if="svc.container_id" @click="viewLogs(svc.container_id, svc.name)" class="p-1 rounded" :class="isDark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-100'" title="Container Logs">
                       <Eye class="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -646,7 +649,7 @@ onUnmounted(() => clearInterval(pollInterval))
               </div>
             </div>
 
-            <div v-if="composeProjects.length === 0" class="text-center py-8 text-slate-400 text-sm">
+            <div v-if="composeProjects.length === 0" class="text-center py-8 text-sm" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
               No compose projects found. Deploy one from the Deploy tab.
             </div>
           </div>
@@ -655,11 +658,11 @@ onUnmounted(() => clearInterval(pollInterval))
         <!-- ── Tab: Deploy ─────────────────────────────────────── -->
         <div v-else-if="activeTab === 'deploy'" class="space-y-4">
           <!-- Sub-tabs -->
-          <div class="flex gap-1 border-b border-slate-200">
+          <div class="flex gap-1 border-b" :class="isDark ? 'border-slate-700' : 'border-slate-200'">
             <button v-for="t in [{ id: 'container', label: 'Single Container', icon: Box }, { id: 'compose', label: 'Compose (YAML)', icon: Layers }]"
               :key="t.id" @click="deployTab = t.id"
               class="flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors"
-              :class="deployTab === t.id ? 'border-brand-500 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'"
+              :class="deployTab === t.id ? (isDark ? 'border-brand-400 text-brand-300' : 'border-brand-500 text-brand-700') : (isDark ? 'border-transparent text-slate-400 hover:text-slate-200' : 'border-transparent text-slate-500 hover:text-slate-700')"
             >
               <component :is="t.icon" class="w-4 h-4" />{{ t.label }}
             </button>
@@ -669,28 +672,28 @@ onUnmounted(() => clearInterval(pollInterval))
           <div v-if="deployTab === 'container'" class="space-y-4 max-w-2xl">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Container Name *</label>
+                <label class="text-xs font-semibold uppercase tracking-wider mb-1 block" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Container Name *</label>
                 <input v-model="dcName" type="text" placeholder="e.g. my-nginx" class="input-field" />
               </div>
               <div>
-                <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Image *</label>
+                <label class="text-xs font-semibold uppercase tracking-wider mb-1 block" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Image *</label>
                 <input v-model="dcImage" type="text" placeholder="e.g. nginx:alpine" class="input-field" />
               </div>
             </div>
             <div>
-              <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Ports <span class="text-slate-400 font-normal">(comma-separated: 8080:80, 443:443)</span></label>
+              <label class="text-xs font-semibold uppercase tracking-wider mb-1 block" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Ports <span class="font-normal" :class="isDark ? 'text-slate-500' : 'text-slate-400'">(comma-separated: 8080:80, 443:443)</span></label>
               <input v-model="dcPorts" type="text" placeholder="8080:80, 3000:3000" class="input-field" />
             </div>
             <div>
-              <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Environment Variables <span class="text-slate-400 font-normal">(one per line: KEY=value)</span></label>
+              <label class="text-xs font-semibold uppercase tracking-wider mb-1 block" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Environment Variables <span class="font-normal" :class="isDark ? 'text-slate-500' : 'text-slate-400'">(one per line: KEY=value)</span></label>
               <textarea v-model="dcEnv" rows="3" placeholder="NODE_ENV=production&#10;PORT=3000" class="input-field font-mono text-xs resize-none"></textarea>
             </div>
             <div>
-              <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Volumes <span class="text-slate-400 font-normal">(one per line: /host:/container)</span></label>
+              <label class="text-xs font-semibold uppercase tracking-wider mb-1 block" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Volumes <span class="font-normal" :class="isDark ? 'text-slate-500' : 'text-slate-400'">(one per line: /host:/container)</span></label>
               <textarea v-model="dcVolumes" rows="2" placeholder="/data:/app/data&#10;/config:/etc/app" class="input-field font-mono text-xs resize-none"></textarea>
             </div>
             <div>
-              <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Restart Policy</label>
+              <label class="text-xs font-semibold uppercase tracking-wider mb-1 block" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Restart Policy</label>
               <select v-model="dcRestart" class="input-field">
                 <option value="">None (default)</option>
                 <option value="always">always</option>
@@ -708,12 +711,12 @@ onUnmounted(() => clearInterval(pollInterval))
           <!-- Deploy Compose form -->
           <div v-else class="space-y-4 max-w-2xl">
             <div>
-              <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">Project Name *</label>
+              <label class="text-xs font-semibold uppercase tracking-wider mb-1 block" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Project Name *</label>
               <input v-model="cpName" type="text" placeholder="e.g. my-stack" class="input-field max-w-xs" />
-              <p class="text-xs text-slate-400 mt-1">Letters, numbers, dashes, underscores only.</p>
+              <p class="text-xs mt-1" :class="isDark ? 'text-slate-500' : 'text-slate-400'">Letters, numbers, dashes, underscores only.</p>
             </div>
             <div>
-              <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">docker-compose.yml Content *</label>
+              <label class="text-xs font-semibold uppercase tracking-wider mb-1 block" :class="isDark ? 'text-slate-400' : 'text-slate-500'">docker-compose.yml Content *</label>
               <textarea
                 v-model="cpYaml"
                 rows="18"
@@ -730,7 +733,7 @@ onUnmounted(() => clearInterval(pollInterval))
               <Layers v-else class="w-4 h-4" />
               {{ isDeployingCompose ? 'Deploying...' : 'Deploy Compose Stack' }}
             </button>
-            <p v-if="!runtime?.compose_available" class="text-xs text-amber-600">
+            <p v-if="!runtime?.compose_available" class="text-xs text-amber-600 dark:text-amber-500">
               Compose is not available. Install podman-compose or docker compose plugin.
             </p>
           </div>
@@ -805,15 +808,15 @@ onUnmounted(() => clearInterval(pollInterval))
 
     <!-- ── Scale Modal ───────────────────────────────────────────── -->
     <Teleport to="body">
-      <div v-if="scaleModal.open" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="scaleModal.open = false">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5 space-y-4">
-          <h3 class="font-semibold text-slate-800 flex items-center gap-2"><Scaling class="w-4 h-4 text-brand-500" /> Scale Service</h3>
+      <div v-if="scaleModal.open" class="fixed inset-0 z-50 flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-black/60'" @click.self="scaleModal.open = false">
+        <div class="rounded-xl shadow-2xl w-full max-w-sm p-5 space-y-4" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <h3 class="font-semibold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><Scaling class="w-4 h-4 text-brand-500" /> Scale Service</h3>
           <div>
-            <p class="text-sm text-slate-600">Service: <strong>{{ scaleModal.service }}</strong></p>
-            <p class="text-xs text-slate-400">Project: {{ scaleModal.projectName }}</p>
+            <p class="text-sm" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Service: <strong>{{ scaleModal.service }}</strong></p>
+            <p class="text-xs" :class="isDark ? 'text-slate-500' : 'text-slate-400'">Project: {{ scaleModal.projectName }}</p>
           </div>
           <div>
-            <label class="text-xs font-semibold text-slate-500 uppercase mb-1 block">Replicas</label>
+            <label class="text-xs font-semibold uppercase mb-1 block" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Replicas</label>
             <input v-model.number="scaleModal.count" type="number" min="0" max="20" class="input-field w-32" />
           </div>
           <div class="flex gap-2 justify-end">
