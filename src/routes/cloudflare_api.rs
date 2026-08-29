@@ -197,6 +197,7 @@ pub async fn start_service(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
     
+    // Coba start secara langsung
     let out = sudo_exec(&password, &["systemctl", "start", "cloudflared"])
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to start service: {}", e)))?;
 
@@ -206,7 +207,27 @@ pub async fn start_service(
             "message": "cloudflared service started"
         })))
     } else {
-        Err((StatusCode::INTERNAL_SERVER_ERROR, String::from_utf8_lossy(&out.stderr).to_string()))
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        
+        // Jika service belum ter-install, coba install otomatis lalu start lagi
+        if stderr.contains("not found") || stderr.contains("Failed to start cloudflared.service") {
+            let install_out = sudo_exec(&password, &["cloudflared", "service", "install"]);
+            if let Ok(install) = install_out {
+                if install.status.success() {
+                    let retry_out = sudo_exec(&password, &["systemctl", "start", "cloudflared"]);
+                    if let Ok(retry) = retry_out {
+                        if retry.status.success() {
+                            return Ok(Json(serde_json::json!({
+                                "status": "success",
+                                "message": "cloudflared service installed and started"
+                            })));
+                        }
+                    }
+                }
+            }
+        }
+        
+        Err((StatusCode::INTERNAL_SERVER_ERROR, stderr))
     }
 }
 
@@ -221,7 +242,24 @@ fn restart_service_internal(password: &str) -> Result<(), (StatusCode, String)> 
     if out.status.success() {
         Ok(())
     } else {
-        Err((StatusCode::INTERNAL_SERVER_ERROR, String::from_utf8_lossy(&out.stderr).to_string()))
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        
+        // Jika service belum ter-install, otomatis jalankan install service
+        if stderr.contains("not found") || stderr.contains("Failed to restart cloudflared.service") {
+            let install_out = sudo_exec(password, &["cloudflared", "service", "install"]);
+            if let Ok(install) = install_out {
+                if install.status.success() {
+                    let retry_out = sudo_exec(password, &["systemctl", "restart", "cloudflared"]);
+                    if let Ok(retry) = retry_out {
+                        if retry.status.success() {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+        
+        Err((StatusCode::INTERNAL_SERVER_ERROR, stderr))
     }
 }
 
