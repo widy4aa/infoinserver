@@ -114,10 +114,10 @@ pub async fn get_cloudflare_status(
         
     let config_exists = tunnel_uuid.is_some();
     
-    // 7. Cari nama tunnel berdasarkan UUID via 'cloudflared tunnel list'
+    // 7. Cari nama tunnel berdasarkan UUID via 'cloudflared tunnel list' (Jalankan tanpa sudo agar cert.pem user lokal terbaca)
     let mut tunnel_name = None;
     if let Some(ref uuid) = tunnel_uuid {
-        if let Ok(out) = sudo_exec(&password, &["cloudflared", "tunnel", "list"]) {
+        if let Ok(out) = Command::new("cloudflared").args(["tunnel", "list"]).output() {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout).to_string();
                 // Format stdout biasanya: ID  NAME  CREATED  CONNECTIONS

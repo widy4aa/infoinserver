@@ -475,7 +475,7 @@ onUnmounted(() => {
               <CheckCircle2 v-if="status.config_exists" class="w-4 h-4 text-green-500" />
               <XCircle v-else class="w-4 h-4 text-slate-400" />
               <span class="text-xs font-semibold" :class="status.config_exists ? (isDark ? 'text-green-300' : 'text-green-700') : (isDark ? 'text-slate-400' : 'text-slate-600')">
-                {{ status.tunnel_name ? status.tunnel_name : (status.config_exists ? 'Configured' : 'Not Found') }}
+                {{ status.tunnel_name || (status.config_exists ? 'Unnamed Tunnel' : 'Not Found') }}
               </span>
             </div>
             <span v-if="status.tunnel_uuid" class="text-[10px] font-mono text-slate-500 truncate" :title="status.tunnel_uuid">UUID: {{ status.tunnel_uuid.substring(0,8) }}...</span>
