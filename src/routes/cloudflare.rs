@@ -13,6 +13,7 @@ pub struct CloudflareStatus {
     pub auth_cert_exists: bool,
     pub config_exists: bool,
     pub tunnel_uuid: Option<String>,
+    pub tunnel_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -51,6 +52,7 @@ pub async fn get_cloudflare_status(
             auth_cert_exists: false,
             config_exists: false,
             tunnel_uuid: None,
+            tunnel_name: None,
         }));
     }
 
@@ -111,6 +113,27 @@ pub async fn get_cloudflare_status(
         });
         
     let config_exists = tunnel_uuid.is_some();
+    
+    // 7. Cari nama tunnel berdasarkan UUID via 'cloudflared tunnel list'
+    let mut tunnel_name = None;
+    if let Some(ref uuid) = tunnel_uuid {
+        if let Ok(out) = sudo_exec(&password, &["cloudflared", "tunnel", "list"]) {
+            if out.status.success() {
+                let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                // Format stdout biasanya: ID  NAME  CREATED  CONNECTIONS
+                for line in stdout.lines() {
+                    if line.contains(uuid) {
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        // Asumsi bagian ke-2 adalah NAME (index 1)
+                        if parts.len() >= 2 {
+                            tunnel_name = Some(parts[1].to_string());
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
 
     Ok(Json(CloudflareStatus {
         installed: true,
@@ -120,6 +143,7 @@ pub async fn get_cloudflare_status(
         auth_cert_exists,
         config_exists,
         tunnel_uuid,
+        tunnel_name,
     }))
 }
 
@@ -174,6 +198,12 @@ pub async fn create_tunnel(
     Json(payload): Json<CreateTunnelRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
+
+    // Pastikan 1 device hanya punya 1 tunnel
+    let config_path = "/etc/cloudflared/config.yml";
+    if std::path::Path::new(config_path).exists() || sudo_exec(&password, &["cat", config_path]).is_ok() {
+        return Err((StatusCode::BAD_REQUEST, "A tunnel is already configured on this device. Please delete it first before creating a new one.".to_string()));
+    }
 
     // Validasi nama tunnel (hanya huruf, angka, dash)
     if payload.name.is_empty() {
@@ -306,6 +336,59 @@ pub async fn check_login_status() -> Result<Json<LoginStatusResponse>, (StatusCo
     let cert_path = format!("{}/.cloudflared/cert.pem", home);
     let authenticated = std::path::Path::new(&cert_path).exists();
     Ok(Json(LoginStatusResponse { authenticated }))
+}
+
+/// Menghapus tunnel secara permanen dari server lokal dan Cloudflare.
+pub async fn delete_tunnel(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+
+    // 1. Baca tunnel UUID sebelum dihapus (dari config.yml)
+    let config_path = "/etc/cloudflared/config.yml";
+    let tunnel_uuid = sudo_exec(&password, &["cat", config_path])
+        .ok()
+        .and_then(|out| {
+            if !out.status.success() { return None; }
+            let content = String::from_utf8_lossy(&out.stdout).to_string();
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("tunnel:") {
+                    let uuid = trimmed.trim_start_matches("tunnel:").trim().to_string();
+                    if !uuid.is_empty() { return Some(uuid); }
+                }
+            }
+            None
+        });
+
+    if let Some(uuid) = tunnel_uuid {
+        // 2. Stop and disable service systemd
+        let _ = sudo_exec(&password, &["systemctl", "stop", "cloudflared"]);
+        let _ = sudo_exec(&password, &["systemctl", "disable", "cloudflared"]);
+        let _ = sudo_exec(&password, &["pkill", "-x", "cloudflared"]); // make sure
+
+        // 3. Delete tunnel from Cloudflare (Requires cert.pem to be available/logged in)
+        // Kita juga tambahkan argumen --force agar jika ada rute yang menyangkut, bisa dibypass.
+        let del_out = sudo_exec(&password, &["cloudflared", "tunnel", "delete", "-f", &uuid]);
+        if let Ok(out) = del_out {
+            if !out.status.success() {
+                // Jangan error out, bisa jadi tunnel sudah tidak ada di cloudflare
+                tracing::warn!("Warning during cloudflare tunnel delete: {}", String::from_utf8_lossy(&out.stderr));
+            }
+        }
+
+        // 4. Bersihkan file lokal
+        let _ = sudo_exec(&password, &["rm", "-f", config_path]);
+        let credential_path = format!("/etc/cloudflared/{}.json", uuid);
+        let _ = sudo_exec(&password, &["rm", "-f", &credential_path]);
+        
+        Ok(Json(serde_json::json!({
+            "status": "success",
+            "message": "Tunnel and configurations deleted successfully."
+        })))
+    } else {
+        Err((StatusCode::BAD_REQUEST, "No active tunnel configuration found to delete.".to_string()))
+    }
 }
 
 pub async fn stop_cloudflare_tunnel(

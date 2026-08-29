@@ -149,6 +149,34 @@ const createTunnel = async () => {
   }
 }
 
+// ── Delete Tunnel ────────────────────────────────────────────
+const isDeletingTunnel = ref(false)
+const deleteTunnel = () => {
+  showConfirm(
+    'Delete Tunnel',
+    'Are you sure you want to permanently delete this tunnel? This will break all routed hostnames, remove the tunnel from your Cloudflare account, and clear local configurations.',
+    async () => {
+      isDeletingTunnel.value = true
+      try {
+        const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/tunnel`, { method: 'DELETE' })
+        if (res.ok) {
+          const data = await res.json()
+          showToast('Success', data.message, 'success')
+          createTunnelResult.value = null // reset result box if any
+          localConfig.value = null // reset config
+          await fetchStatus()
+        } else {
+          await handleApiError(res)
+        }
+      } catch (e) {
+        showToast('Error', e.message, 'error')
+      } finally {
+        isDeletingTunnel.value = false
+      }
+    }
+  )
+}
+
 // ── Login / Auth ─────────────────────────────────────────────
 const startLogin = async () => {
   isStartingLogin.value = true
@@ -435,16 +463,22 @@ onUnmounted(() => {
           </div>
 
           <!-- Config / Tunnel -->
-          <div class="flex flex-col gap-1 p-3 rounded-lg border" :class="status.config_exists ? (isDark ? 'border-green-800 bg-green-900/20' : 'border-green-200 bg-green-50') : (isDark ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50')">
-            <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.config_exists ? (isDark ? 'text-green-400' : 'text-green-600') : 'text-slate-500'">Tunnel Config</span>
+          <div class="flex flex-col gap-1 p-3 rounded-lg border relative" :class="status.config_exists ? (isDark ? 'border-green-800 bg-green-900/20' : 'border-green-200 bg-green-50') : (isDark ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50')">
+            <div class="flex justify-between items-start">
+              <span class="text-[10px] font-bold uppercase tracking-wider" :class="status.config_exists ? (isDark ? 'text-green-400' : 'text-green-600') : 'text-slate-500'">Tunnel Config</span>
+              <button v-if="status.config_exists" @click="deleteTunnel" class="text-slate-400 hover:text-red-500 p-0.5" title="Delete Tunnel" :disabled="isDeletingTunnel">
+                <Loader2 v-if="isDeletingTunnel" class="w-3.5 h-3.5 animate-spin" />
+                <Trash2 v-else class="w-3.5 h-3.5" />
+              </button>
+            </div>
             <div class="flex items-center gap-1.5">
               <CheckCircle2 v-if="status.config_exists" class="w-4 h-4 text-green-500" />
               <XCircle v-else class="w-4 h-4 text-slate-400" />
               <span class="text-xs font-semibold" :class="status.config_exists ? (isDark ? 'text-green-300' : 'text-green-700') : (isDark ? 'text-slate-400' : 'text-slate-600')">
-                {{ status.config_exists ? 'Found' : 'Not Found' }}
+                {{ status.tunnel_name ? status.tunnel_name : (status.config_exists ? 'Configured' : 'Not Found') }}
               </span>
             </div>
-            <span v-if="status.tunnel_uuid" class="text-[10px] font-mono text-slate-500 truncate" :title="status.tunnel_uuid">{{ status.tunnel_uuid.substring(0,8) }}...</span>
+            <span v-if="status.tunnel_uuid" class="text-[10px] font-mono text-slate-500 truncate" :title="status.tunnel_uuid">UUID: {{ status.tunnel_uuid.substring(0,8) }}...</span>
           </div>
         </div>
 
@@ -529,7 +563,7 @@ onUnmounted(() => {
           </p>
 
           <div v-if="status.config_exists" class="ml-8 flex items-center gap-2 text-sm" :class="isDark ? 'text-green-400' : 'text-green-600'">
-            <CheckCircle2 class="w-4 h-4" /> Tunnel configured (UUID: {{ status.tunnel_uuid ?? 'unknown' }})
+            <CheckCircle2 class="w-4 h-4" /> Tunnel configured: {{ status.tunnel_name || 'unknown' }} <span class="text-xs opacity-75">(UUID: {{ status.tunnel_uuid ?? 'unknown' }})</span>
           </div>
 
           <div v-else class="ml-8 space-y-3">
@@ -569,7 +603,7 @@ onUnmounted(() => {
             <ChevronRight class="w-5 h-5 text-brand-500" />
             Ingress Routes
             <span v-if="localConfig" class="text-xs font-normal ml-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
-              (Tunnel: <code class="font-mono">{{ localConfig.tunnel }}</code>)
+              (Tunnel: <code class="font-mono">{{ status?.tunnel_name || localConfig.tunnel }}</code>)
             </span>
           </h2>
           <button @click="fetchConfig" class="btn-outline text-xs" :disabled="isLoadingConfig">
