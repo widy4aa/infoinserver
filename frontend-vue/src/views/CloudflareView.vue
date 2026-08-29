@@ -15,7 +15,16 @@ const { getActiveServerUrl } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
 const { isDark } = useThemeStore()
 
-// ── Status ──────────────────────────────────────────────────
+const handleApiError = async (res) => {
+  let errText = ''
+  try {
+    const data = await res.json()
+    errText = data.message || data.error || JSON.stringify(data)
+  } catch (e) {
+    errText = await res.text()
+  }
+  showToast('Error', errText, 'error')
+}
 const status = ref(null)
 const isLoadingStatus = ref(true)
 
@@ -97,12 +106,12 @@ const installCloudflared = async () => {
   showToast('Info', 'Downloading and installing cloudflared...')
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/install`, { method: 'POST' })
-    const data = await res.json()
     if (res.ok) {
+      const data = await res.json()
       showToast('Success', data.message, 'success')
       await fetchStatus()
     } else {
-      showToast('Error', data, 'error')
+      await handleApiError(res)
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -125,13 +134,13 @@ const createTunnel = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newTunnelName.value.trim() })
     })
-    const data = await res.json()
     if (res.ok) {
+      const data = await res.json()
       createTunnelResult.value = data
       showToast('Success', data.message, 'success')
       await fetchStatus()
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
+      await handleApiError(res)
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -146,14 +155,14 @@ const startLogin = async () => {
   loginUrl.value = null
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/login`, { method: 'POST' })
-    const data = await res.json()
     if (res.ok) {
+      const data = await res.json()
       loginUrl.value = data.url
       showToast('Info', data.message)
       // Mulai polling cert.pem
       startPollingLogin()
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+      await handleApiError(res)
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -205,14 +214,14 @@ const addRoute = async () => {
         service: newService.value.trim()
       })
     })
-    const data = await res.json()
     if (res.ok) {
+      const data = await res.json()
       showToast('Success', data.message, 'success')
       newHostname.value = ''
       newService.value = 'http://127.0.0.1:'
       await fetchConfig()
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
+      await handleApiError(res)
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -229,12 +238,12 @@ const deleteRoute = (hostname) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hostname })
       })
-      const data = await res.json()
       if (res.ok) {
+        const data = await res.json()
         showToast('Success', data.message, 'success')
         await fetchConfig()
       } else {
-        showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
+        await handleApiError(res)
       }
     } catch (e) {
       showToast('Error', e.message, 'error')
@@ -247,12 +256,12 @@ const restartService = async () => {
   isRestarting.value = true
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/restart`, { method: 'POST' })
-    const data = await res.json()
     if (res.ok) {
+      const data = await res.json()
       showToast('Success', data.message, 'success')
       await fetchStatus()
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+      await handleApiError(res)
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -265,12 +274,12 @@ const startService = async () => {
   isStarting.value = true
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/start`, { method: 'POST' })
-    const data = await res.json()
     if (res.ok) {
+      const data = await res.json()
       showToast('Success', data.message, 'success')
       await fetchStatus()
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+      await handleApiError(res)
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -284,12 +293,12 @@ const stopService = async () => {
     isStopping.value = true
     try {
       const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/stop`, { method: 'POST' })
-      const data = await res.json()
       if (res.ok) {
+        const data = await res.json()
         showToast('Success', data.message, 'success')
         await fetchStatus()
       } else {
-        showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+        await handleApiError(res)
       }
     } catch (e) {
       showToast('Error', e.message, 'error')
@@ -485,7 +494,7 @@ onMounted(fetchStatus)
             <h3 class="font-semibold text-sm" :class="isDark ? 'text-slate-200' : 'text-slate-800'">Create a Named Tunnel</h3>
           </div>
           <p class="text-xs ml-8" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
-            Runs <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">cloudflared tunnel create &lt;name&gt;</code> — creates a tunnel UUID and credentials file. Then manually create <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">/etc/cloudflared/config.yml</code> referencing this tunnel.
+            Runs <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">cloudflared tunnel create &lt;name&gt;</code> — generates a tunnel UUID and credentials file. The dashboard will automatically create <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">/etc/cloudflared/config.yml</code> for you.
           </p>
 
           <div v-if="status.config_exists" class="ml-8 flex items-center gap-2 text-sm" :class="isDark ? 'text-green-400' : 'text-green-600'">
@@ -514,8 +523,8 @@ onMounted(fetchStatus)
               <p v-if="createTunnelResult.uuid" class="text-xs font-mono" :class="isDark ? 'text-slate-300' : 'text-slate-700'">
                 UUID: <strong>{{ createTunnelResult.uuid }}</strong>
               </p>
-              <p class="text-xs mt-2" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
-                Next: create <code class="px-1 rounded" :class="isDark ? 'bg-slate-800' : 'bg-slate-100'">/etc/cloudflared/config.yml</code> with this tunnel UUID, then come back to add routes.
+              <p class="text-xs mt-2" :class="isDark ? 'text-green-500' : 'text-green-600'">
+                <strong>Config automatically generated!</strong> You can now proceed to add routes below.
               </p>
             </div>
           </div>

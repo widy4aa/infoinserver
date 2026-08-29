@@ -280,9 +280,13 @@ fn read_config_file(password: &str) -> Result<String, (StatusCode, String)> {
 
 /// Tulis config.yml
 fn write_config_file(password: &str, content: &str) -> Result<(), (StatusCode, String)> {
-    let write_cmd = format!("cat << 'EOF' > {}\n{}\nEOF", CONFIG_PATH, content);
-    let out = sudo_exec(password, &["bash", "-c", &write_cmd])
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write config: {}", e)))?;
+    let tmp_path = "/tmp/cloudflared_config_update.yml";
+    if let Err(e) = std::fs::write(tmp_path, content) {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write tmp config: {}", e)));
+    }
+
+    let out = sudo_exec(password, &["mv", tmp_path, CONFIG_PATH])
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to move config: {}", e)))?;
 
     if out.status.success() {
         Ok(())

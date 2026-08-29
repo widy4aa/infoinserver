@@ -196,9 +196,10 @@ pub async fn create_tunnel(
                 tunnel_id, dest_json
             );
             
-            // Tulis file config.yml dengan bash -c echo
-            let write_cmd = format!("echo '{}' > /etc/cloudflared/config.yml", default_config);
-            let _ = sudo_exec(&password, &["bash", "-c", &write_cmd]);
+            // Tulis file config.yml dengan aman (tulis ke /tmp lalu mv)
+            let tmp_path = format!("/tmp/config_{}.yml", tunnel_id);
+            let _ = std::fs::write(&tmp_path, default_config);
+            let _ = sudo_exec(&password, &["mv", &tmp_path, "/etc/cloudflared/config.yml"]);
         }
 
         Ok(Json(serde_json::json!({
