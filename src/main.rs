@@ -20,6 +20,9 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() {
+    // Install ring sebagai rustls crypto provider (pure Rust, tidak butuh libclang/openssl)
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     tracing_subscriber::fmt::init();
     
     let _ = dotenvy::dotenv();

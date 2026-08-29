@@ -29,9 +29,9 @@ cargo build --release
 if [ $? -ne 0 ]; then
     echo "Error: Build gagal. Silakan periksa log di atas."
     echo ""
-    echo "Jika error berkaitan dengan 'clang-sys' atau 'libclang', jalankan:"
-    echo "  Ubuntu/Debian: sudo apt install libclang-dev libssl-dev libpam0g-dev"
-    echo "  Arch/CachyOS:  sudo pacman -S clang openssl pam"
+    echo "Pastikan semua build dependencies sudah terinstall:"
+    echo "  Ubuntu/Debian: sudo apt install build-essential pkg-config libclang-dev libpam0g-dev"
+    echo "  Arch/CachyOS:  sudo pacman -S base-devel clang pam"
     exit 1
 fi
 
