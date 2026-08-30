@@ -1,8 +1,9 @@
-use axum::{Json, http::StatusCode, extract::Extension};
+use axum::{Json, http::StatusCode, extract::{Extension, State}};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use crate::auth::jwt_middleware::AuthUser;
 use crate::routes::process_mgmt::sudo_exec;
+use crate::AppState;
 
 const CONFIG_PATH: &str = "/etc/cloudflared/config.yml";
 
@@ -46,27 +47,38 @@ pub struct RegisterDnsRequest {
 
 /// Baca dan parse /etc/cloudflared/config.yml
 pub async fn get_local_config(
+    State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<LocalTunnelConfig>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
+
+    // Pastikan tabel ada
+    let _ = sqlx::query(
+        "CREATE TABLE IF NOT EXISTS cloudflare_cname_status (
+            hostname TEXT PRIMARY KEY,
+            tunnel_name TEXT NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT 1,
+            added_at TEXT NOT NULL
+        );"
+    )
+    .execute(&state.db_pool)
+    .await;
+
     match read_config_file(&password) {
         Ok(raw) => match parse_config(&raw) {
             Ok(mut config) => {
-                // Lakukan pengecekan CNAME untuk setiap hostname secara parallel/sequential
+                // Ambil daftar hostname yang sukses didaftarkan (active)
+                let active_hostnames: Vec<String> = sqlx::query_scalar(
+                    "SELECT hostname FROM cloudflare_cname_status WHERE is_active = 1"
+                )
+                .fetch_all(&state.db_pool)
+                .await
+                .unwrap_or_default();
+
                 for rule in &mut config.ingress {
                     if let Some(ref host) = rule.hostname {
-                        // Jalankan command 'host -t cname' untuk cek DNS CNAME
-                        let check_cmd = Command::new("host")
-                            .args(["-t", "cname", host])
-                            .output();
-                        
-                        let is_active = if let Ok(out) = check_cmd {
-                            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-                            // Jika DNS mengarah ke cfargotunnel.com, artinya aktif
-                            out.status.success() && (stdout.contains("cfargotunnel.com") || stdout.contains("alias for"))
-                        } else {
-                            false
-                        };
+                        // Cek apakah ada di database
+                        let is_active = active_hostnames.contains(host);
                         rule.cname_active = Some(is_active);
                     }
                 }
@@ -90,9 +102,8 @@ pub async fn get_local_config(
 }
 
 /// Tambah route baru:
-/// 1) Daftarkan DNS CNAME via `cloudflared tunnel route dns`
-/// 2) Update config.yml
-/// 3) Restart service
+/// 1) Update config.yml (DNS CNAME sekarang manual lewat tombol Add CNAME agar lebih aman)
+/// 2) Restart service
 pub async fn add_local_route(
     Extension(auth): Extension<AuthUser>,
     Json(payload): Json<AddRouteRequest>,
@@ -104,22 +115,7 @@ pub async fn add_local_route(
         return Err((StatusCode::BAD_REQUEST, "hostname, service, and tunnel_name must not be empty".to_string()));
     }
 
-    // 1. Daftarkan DNS CNAME ke Cloudflare
-    let dns_output = sudo_exec(&password, &["cloudflared", "tunnel", "route", "dns", &payload.tunnel_name, &payload.hostname])
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to register DNS: {}", e)))?;
-
-    let dns_stdout = String::from_utf8_lossy(&dns_output.stdout).to_string();
-    let dns_stderr = String::from_utf8_lossy(&dns_output.stderr).to_string();
-    let dns_combined = format!("{}{}", dns_stdout, dns_stderr);
-
-    // Lanjut meski DNS gagal (mungkin sudah ada), tapi log hasilnya
-    let dns_msg = if dns_output.status.success() {
-        format!("DNS registered: {}", dns_combined.trim())
-    } else {
-        format!("DNS registration warning: {}", dns_combined.trim())
-    };
-
-    // 2. Baca config lama
+    // 1. Baca config lama
     let raw = match read_config_file(&password) {
         Ok(r) => r,
         Err(e) => {
@@ -142,7 +138,7 @@ pub async fn add_local_route(
         return Err((StatusCode::BAD_REQUEST, format!("Route for '{}' already exists in config", payload.hostname)));
     }
 
-    // 3. Tambah rule baru sebelum catch-all
+    // 2. Tambah rule baru sebelum catch-all
     let new_rule = IngressRule {
         hostname: Some(payload.hostname.clone()),
         service: payload.service.clone(),
@@ -157,22 +153,22 @@ pub async fn add_local_route(
     normal_rules.push(IngressRule { hostname: None, service: "http_status:404".to_string(), cname_active: None });
     config.ingress = normal_rules;
 
-    // 4. Tulis kembali ke config.yml
+    // 3. Tulis kembali ke config.yml
     let new_yaml = build_config_yaml(&config)?;
     write_config_file(&password, &new_yaml)?;
 
-    // 5. Restart service
+    // 4. Restart service
     restart_service_internal(&password)?;
 
     Ok(Json(serde_json::json!({
         "status": "success",
-        "message": format!("Route '{}' -> '{}' added and service restarted.", payload.hostname, payload.service),
-        "dns_result": dns_msg
+        "message": format!("Route '{}' -> '{}' added successfully. Please click 'Add CNAME' to activate DNS.", payload.hostname, payload.service),
     })))
 }
 
 /// Hapus route dari config dan restart service
 pub async fn delete_local_route(
+    State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
     Json(payload): Json<DeleteRouteRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
@@ -181,6 +177,17 @@ pub async fn delete_local_route(
     if payload.hostname.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "hostname must not be empty".to_string()));
     }
+
+    // Cabut CNAME dari Cloudflare DNS (tanpa sudo agar auth terbaca)
+    let _ = Command::new("cloudflared")
+        .args(["tunnel", "route", "dns", "delete", &payload.hostname])
+        .output();
+
+    // Hapus dari database lokal
+    let _ = sqlx::query("DELETE FROM cloudflare_cname_status WHERE hostname = ?")
+        .bind(&payload.hostname)
+        .execute(&state.db_pool)
+        .await;
 
     let raw = read_config_file(&password)?;
     let mut config = parse_config(&raw)?;
@@ -225,6 +232,7 @@ pub async fn restart_service(
 
 /// Daftarkan CNAME DNS ke Cloudflare secara manual
 pub async fn register_dns_cname(
+    State(state): State<AppState>,
     Extension(_auth): Extension<AuthUser>,
     Json(payload): Json<RegisterDnsRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
@@ -243,6 +251,17 @@ pub async fn register_dns_cname(
     let dns_combined = format!("{}{}", dns_stdout, dns_stderr);
 
     if dns_output.status.success() {
+        // Catat ke database
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = sqlx::query(
+            "INSERT OR REPLACE INTO cloudflare_cname_status (hostname, tunnel_name, is_active, added_at) VALUES (?, ?, 1, ?)"
+        )
+        .bind(&payload.hostname)
+        .bind(&payload.tunnel_name)
+        .bind(&now)
+        .execute(&state.db_pool)
+        .await;
+
         Ok(Json(serde_json::json!({
             "status": "success",
             "message": format!("CNAME registered successfully: {}", dns_combined.trim())
