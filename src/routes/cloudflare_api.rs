@@ -146,6 +146,7 @@ pub async fn add_local_route(
     let new_rule = IngressRule {
         hostname: Some(payload.hostname.clone()),
         service: payload.service.clone(),
+        cname_active: None,
     };
     // Pisahkan catch-all dan rules biasa
     let mut normal_rules: Vec<IngressRule> = config.ingress.into_iter()
@@ -153,7 +154,7 @@ pub async fn add_local_route(
         .collect();
     normal_rules.push(new_rule);
     // Tambahkan catch-all di akhir
-    normal_rules.push(IngressRule { hostname: None, service: "http_status:404".to_string() });
+    normal_rules.push(IngressRule { hostname: None, service: "http_status:404".to_string(), cname_active: None });
     config.ingress = normal_rules;
 
     // 4. Tulis kembali ke config.yml
@@ -196,7 +197,7 @@ pub async fn delete_local_route(
     // Pastikan catch-all tetap ada di akhir
     let has_catchall = config.ingress.iter().any(|r| r.hostname.is_none());
     if !has_catchall {
-        config.ingress.push(IngressRule { hostname: None, service: "http_status:404".to_string() });
+        config.ingress.push(IngressRule { hostname: None, service: "http_status:404".to_string(), cname_active: None });
     }
 
     let new_yaml = build_config_yaml(&config)?;
@@ -224,11 +225,9 @@ pub async fn restart_service(
 
 /// Daftarkan CNAME DNS ke Cloudflare secara manual
 pub async fn register_dns_cname(
-    Extension(auth): Extension<AuthUser>,
+    Extension(_auth): Extension<AuthUser>,
     Json(payload): Json<RegisterDnsRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let password = auth.0.pwd.clone();
-
     if payload.tunnel_name.is_empty() || payload.hostname.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "tunnel_name and hostname must not be empty".to_string()));
     }
