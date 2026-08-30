@@ -7,7 +7,7 @@ import { useThemeStore } from '../stores/themeStore'
 import {
   Cloud, CheckCircle2, XCircle, Loader2, Plus, Trash2,
   RefreshCw, Terminal, KeyRound, ExternalLink, ShieldCheck,
-  AlertTriangle, DownloadCloud, ChevronRight, Copy, Play, Square
+  AlertTriangle, DownloadCloud, ChevronRight, Copy, Play, Square, Globe
 } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
@@ -277,6 +277,39 @@ const deleteRoute = (hostname) => {
       showToast('Error', e.message, 'error')
     }
   })
+}
+
+// ── Register CNAME manually ──────────────────────────────────
+const registeringDnsMap = ref({})
+const registerDns = async (hostname) => {
+  const tunnelName = status.value?.tunnel_name || localConfig.value?.tunnel
+  if (!tunnelName) {
+    showToast('Error', 'Tunnel name / UUID is required to register DNS CNAME.', 'error')
+    return
+  }
+  registeringDnsMap.value[hostname] = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/routes/dns`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tunnel_name: tunnelName,
+        hostname: hostname
+      })
+    })
+    if (res.ok) {
+      const data = await res.json()
+      showToast('Success', data.message, 'success')
+      // Refresh config agar state cname_active berubah di tabel
+      await fetchConfig()
+    } else {
+      await handleApiError(res)
+    }
+  } catch (e) {
+    showToast('Error', e.message, 'error')
+  } finally {
+    registeringDnsMap.value[hostname] = false
+  }
 }
 
 // ── Restart / Start / Stop ──────────────────────────────────────────────────
@@ -653,6 +686,7 @@ onUnmounted(() => {
               <tr>
                 <th class="table-th">Public Hostname</th>
                 <th class="table-th">Local Service</th>
+                <th class="table-th text-center">CNAME DNS</th>
                 <th class="table-th text-right">Action</th>
               </tr>
             </thead>
@@ -665,7 +699,26 @@ onUnmounted(() => {
                   </a>
                 </td>
                 <td class="table-td font-mono text-xs" :class="isDark ? 'text-slate-300' : 'text-slate-600'">{{ r.service }}</td>
-                <td class="table-td text-right">
+                <td class="table-td text-center">
+                  <span v-if="r.cname_active" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400">
+                    Active (Green)
+                  </span>
+                  <span v-else class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
+                    Pending CNAME (Yellow)
+                  </span>
+                </td>
+                <td class="table-td text-right flex items-center justify-end gap-1.5">
+                  <button
+                    v-if="!r.cname_active"
+                    @click="registerDns(r.hostname)"
+                    class="p-1 rounded text-xs flex items-center gap-1 bg-brand-50 hover:bg-brand-100 text-brand-600 border border-brand-200 dark:bg-brand-950/40 dark:text-brand-400 dark:border-brand-900"
+                    title="Add CNAME to Cloudflare"
+                    :disabled="registeringDnsMap[r.hostname]"
+                  >
+                    <Loader2 v-if="registeringDnsMap[r.hostname]" class="w-3 h-3 animate-spin" />
+                    <Globe v-else class="w-3 h-3" />
+                    Add CNAME
+                  </button>
                   <button
                     @click="deleteRoute(r.hostname)"
                     class="p-1.5 rounded"
@@ -677,7 +730,7 @@ onUnmounted(() => {
                 </td>
               </tr>
               <tr v-if="routes.length === 0">
-                <td colspan="3" class="text-center p-6 text-sm" :class="isDark ? 'text-slate-500' : 'text-slate-500'">
+                <td colspan="4" class="text-center p-6 text-sm" :class="isDark ? 'text-slate-500' : 'text-slate-500'">
                   No ingress routes configured. Add one above.
                 </td>
               </tr>

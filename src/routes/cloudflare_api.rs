@@ -1,16 +1,20 @@
 use axum::{Json, http::StatusCode, extract::Extension};
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 use crate::auth::jwt_middleware::AuthUser;
 use crate::routes::process_mgmt::sudo_exec;
 
 const CONFIG_PATH: &str = "/etc/cloudflared/config.yml";
 
-/// Representasi ingress rule dari config.yml
+/// Representasi ingress rule dari config.yml yang dikirim ke frontend
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct IngressRule {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
     pub service: String,
+    // Field baru untuk deteksi CNAME di frontend
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cname_active: Option<bool>,
 }
 
 /// Representasi config.yml yang diparsing
@@ -34,6 +38,12 @@ pub struct DeleteRouteRequest {
     pub hostname: String,
 }
 
+#[derive(Deserialize)]
+pub struct RegisterDnsRequest {
+    pub tunnel_name: String,
+    pub hostname: String,
+}
+
 /// Baca dan parse /etc/cloudflared/config.yml
 pub async fn get_local_config(
     Extension(auth): Extension<AuthUser>,
@@ -41,7 +51,27 @@ pub async fn get_local_config(
     let password = auth.0.pwd.clone();
     match read_config_file(&password) {
         Ok(raw) => match parse_config(&raw) {
-            Ok(config) => Ok(Json(config)),
+            Ok(mut config) => {
+                // Lakukan pengecekan CNAME untuk setiap hostname secara parallel/sequential
+                for rule in &mut config.ingress {
+                    if let Some(ref host) = rule.hostname {
+                        // Jalankan command 'host -t cname' untuk cek DNS CNAME
+                        let check_cmd = Command::new("host")
+                            .args(["-t", "cname", host])
+                            .output();
+                        
+                        let is_active = if let Ok(out) = check_cmd {
+                            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                            // Jika DNS mengarah ke cfargotunnel.com, artinya aktif
+                            out.status.success() && (stdout.contains("cfargotunnel.com") || stdout.contains("alias for"))
+                        } else {
+                            false
+                        };
+                        rule.cname_active = Some(is_active);
+                    }
+                }
+                Ok(Json(config))
+            },
             Err(e) => Err(e),
         },
         Err(e) => {
@@ -190,6 +220,37 @@ pub async fn restart_service(
         "status": "success",
         "message": "cloudflared service restarted"
     })))
+}
+
+/// Daftarkan CNAME DNS ke Cloudflare secara manual
+pub async fn register_dns_cname(
+    Extension(auth): Extension<AuthUser>,
+    Json(payload): Json<RegisterDnsRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+
+    if payload.tunnel_name.is_empty() || payload.hostname.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "tunnel_name and hostname must not be empty".to_string()));
+    }
+
+    // Jalankan tanpa sudo agar cert.pem di home directory user terbaca
+    let dns_output = Command::new("cloudflared")
+        .args(["tunnel", "route", "dns", &payload.tunnel_name, &payload.hostname])
+        .output()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to register DNS: {}", e)))?;
+
+    let dns_stdout = String::from_utf8_lossy(&dns_output.stdout).to_string();
+    let dns_stderr = String::from_utf8_lossy(&dns_output.stderr).to_string();
+    let dns_combined = format!("{}{}", dns_stdout, dns_stderr);
+
+    if dns_output.status.success() {
+        Ok(Json(serde_json::json!({
+            "status": "success",
+            "message": format!("CNAME registered successfully: {}", dns_combined.trim())
+        })))
+    } else {
+        Err((StatusCode::INTERNAL_SERVER_ERROR, format!("DNS Registration failed: {}", dns_combined.trim())))
+    }
 }
 
 /// Start cloudflared service
