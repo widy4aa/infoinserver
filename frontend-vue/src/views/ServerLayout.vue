@@ -19,6 +19,31 @@ const handleGoHome = () => {
   }
 }
 
+// ── PING / LATENCY MONITOR ──
+const pingMs = ref(null)
+let pingInterval = null
+
+const checkPing = async () => {
+  if (!currentServer.value?.url) return
+  const url = currentServer.value.url.startsWith('http') ? currentServer.value.url : `http://${currentServer.value.url}`
+  const startTime = performance.now()
+  
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 3000)
+    
+    // Panggil endpoint /api/ping public yang sangat ringan
+    await fetch(`${url}/api/ping`, { signal: controller.signal })
+    clearTimeout(timeoutId)
+    
+    const endTime = performance.now()
+    pingMs.value = Math.round(endTime - startTime)
+  } catch (e) {
+    // Jika timeout atau gagal
+    pingMs.value = -1
+  }
+}
+
 const checkAuth = () => {
   const sid = currentServer.value?.id
   if (!sid) return
@@ -47,10 +72,14 @@ onMounted(() => {
   currentServer.value = server
   checkAuth()
   window.addEventListener('auth:expired', handleAuthExpired)
+  
+  checkPing() // Immediate check
+  pingInterval = setInterval(checkPing, 3000)
 })
 
 onUnmounted(() => {
   window.removeEventListener('auth:expired', handleAuthExpired)
+  if (pingInterval) clearInterval(pingInterval)
   // Tidak hapus token di sini — supaya refresh tidak logout
 })
 </script>
@@ -76,9 +105,28 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <button @click="showTerminal = true" class="btn-primary">
-          <Terminal class="w-4 h-4" /> Root Terminal
-        </button>
+        <div class="flex items-center gap-3">
+          <!-- Ping Indicator -->
+          <div class="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-mono font-medium border"
+               :class="pingMs === null ? 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' :
+                       pingMs === -1 ? 'bg-red-100 text-red-600 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800/50' :
+                       pingMs < 100 ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/30' :
+                       pingMs < 300 ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/30' :
+                       'bg-orange-50 text-orange-600 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800/30'">
+            <div class="w-2 h-2 rounded-full" 
+                 :class="pingMs === null ? 'bg-slate-400' : 
+                         pingMs === -1 ? 'bg-red-500' : 
+                         pingMs < 100 ? 'bg-emerald-500' : 
+                         pingMs < 300 ? 'bg-amber-500' : 
+                         'bg-orange-500'"></div>
+            <span>{{ pingMs === null ? 'ping...' : pingMs === -1 ? 'timeout' : pingMs + 'ms' }}</span>
+          </div>
+
+          <!-- Terminal Button -->
+          <button @click="showTerminal = true" class="btn-primary w-9 h-9 p-0 flex items-center justify-center rounded-lg" title="Root Terminal">
+            <Terminal class="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <!-- Feature Tabs -->

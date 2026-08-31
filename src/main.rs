@@ -67,6 +67,7 @@ async fn main() {
         .allow_headers(Any);
 
     let public_routes = Router::new()
+        .route("/api/ping", get(|| async { "pong" }))
         .route("/api/auth/login", post(routes::auth::login_handler));
 
     // ── Routes with ContainerState
