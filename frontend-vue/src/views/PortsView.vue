@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
-import { Network, Radar, ShieldCheck, Activity, Play, History, Download, Upload, Server } from 'lucide-vue-next'
+import { Network, Radar, ShieldCheck, Activity, Play, History, Download, Upload, Server, CheckCircle2, XCircle, AlertTriangle, Plus } from 'lucide-vue-next'
 import { useToastStore } from '../stores/toastStore'
 import { useThemeStore } from '../stores/themeStore'
 
@@ -113,18 +113,104 @@ const pollScan = async () => {
 
 // ── FAIL2BAN STATE ──
 const f2bStatus = ref(null)
+const f2bLogs = ref([])
+const f2bConfig = ref([])
 const isLoadingF2b = ref(true)
 const isInstallingF2b = ref(false)
+
+const formManualBan = ref({ jail: 'sshd', ip: '' })
+const isBanning = ref(false)
+
+const showConfigModal = ref(false)
+const formConfig = ref({
+  name: '', enabled: false, port: '', logpath: '', filter: '', maxretry: '', bantime: '', findtime: ''
+})
 
 const fetchFail2Ban = async () => {
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/fail2ban/status`)
     if (res.ok) {
       f2bStatus.value = await res.json()
+      if (f2bStatus.value.installed) {
+        fetchF2bLogs()
+      }
     }
   } catch (e) {
   } finally {
     isLoadingF2b.value = false
+  }
+}
+
+const fetchF2bLogs = async () => {
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/fail2ban/logs`)
+    if (res.ok) f2bLogs.value = await res.json()
+  } catch (e) {}
+}
+
+const fetchF2bConfig = async () => {
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/fail2ban/config`)
+    if (res.ok) f2bConfig.value = await res.json()
+  } catch (e) {}
+}
+
+const openConfigModal = async () => {
+  await fetchF2bConfig()
+  showConfigModal.value = true
+}
+
+const editJail = (jail) => {
+  formConfig.value = { ...jail }
+}
+
+const createNewJail = () => {
+  formConfig.value = {
+    name: 'custom-', enabled: true, port: '', logpath: '', filter: '', maxretry: '5', bantime: '10m', findtime: '10m'
+  }
+}
+
+const saveJailConfig = async () => {
+  if (!formConfig.value.name) return
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/fail2ban/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formConfig.value)
+    })
+    if (res.ok) {
+      showToast("Success", "Jail configuration saved and reloaded", "success")
+      await fetchF2bConfig()
+      await fetchFail2Ban() // refresh status
+      formConfig.value = { name: '', enabled: false, port: '', logpath: '', filter: '', maxretry: '', bantime: '', findtime: '' }
+    } else {
+      showToast("Error", await res.text(), "error")
+    }
+  } catch (e) {
+    showToast("Error", "Failed to save configuration", "error")
+  }
+}
+
+const banIp = async () => {
+  if (!formManualBan.value.ip || !formManualBan.value.jail) return
+  isBanning.value = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/fail2ban/ban`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formManualBan.value)
+    })
+    if (res.ok) {
+      showToast("Success", "IP has been banned", "success")
+      formManualBan.value.ip = ''
+      await fetchFail2Ban()
+    } else {
+      showToast("Error", await res.text(), "error")
+    }
+  } catch (e) {
+    showToast("Error", "Failed to ban IP", "error")
+  } finally {
+    isBanning.value = false
   }
 }
 
@@ -339,27 +425,152 @@ onUnmounted(() => {
         Fail2Ban is not installed on this server. Install it to protect services like SSH from brute-force attacks.
       </div>
       
-      <div v-else-if="f2bStatus && f2bStatus.installed" class="space-y-4">
-        <div v-for="jail in f2bStatus.jails" :key="jail.name" class="border rounded-lg" :class="isDark ? 'border-slate-700' : 'border-slate-200'">
-          <div class="px-4 py-2 border-b bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center">
-            <span class="font-bold text-sm" :class="isDark ? 'text-slate-200' : 'text-slate-700'">Jail: {{ jail.name }}</span>
-            <span class="text-xs px-2 py-0.5 rounded-full" :class="isDark ? 'bg-red-900/30 text-red-400' : 'bg-red-100 text-red-600'">{{ jail.banned_ips.length }} Banned</span>
+      <div v-else-if="f2bStatus && f2bStatus.installed" class="space-y-6">
+        
+        <div class="flex gap-2">
+          <button @click="openConfigModal" class="btn-primary text-xs h-8 px-3 whitespace-nowrap">
+            <ShieldCheck class="w-3.5 h-3.5" /> Configure Jails
+          </button>
+          
+          <!-- Manual Ban Form -->
+          <div class="flex flex-1 gap-2 border rounded-lg p-1 items-center" :class="isDark ? 'border-slate-700 bg-slate-800/30' : 'border-slate-200 bg-slate-50'">
+            <select v-model="formManualBan.jail" class="input-field py-1 text-xs border-none bg-transparent">
+              <option v-for="j in f2bStatus.jails" :key="j.name" :value="j.name">{{ j.name }}</option>
+            </select>
+            <input v-model="formManualBan.ip" type="text" placeholder="IP Address to ban..." class="input-field py-1 text-xs border-none bg-transparent flex-1" :disabled="isBanning" @keyup.enter="banIp">
+            <button @click="banIp" class="btn-primary py-1 px-3 text-xs whitespace-nowrap" :disabled="isBanning">
+               {{ isBanning ? 'Banning...' : 'Ban IP' }}
+            </button>
           </div>
-          <div class="p-3">
-            <div v-if="jail.banned_ips.length === 0" class="text-sm text-slate-500 italic">No IPs currently banned.</div>
-            <div v-else class="flex flex-wrap gap-2">
-              <div v-for="ip in jail.banned_ips" :key="ip" class="flex items-center gap-2 px-2 py-1 rounded border text-sm" :class="isDark ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-700'">
-                <span class="font-mono">{{ ip }}</span>
-                <button @click="unbanIp(jail.name, ip)" class="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 font-bold text-xs uppercase" title="Unban this IP">
-                  Unban
-                </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          
+          <!-- Active Jails List -->
+          <div class="space-y-4">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Active Jails & Blocks</h3>
+            <div v-for="jail in f2bStatus.jails" :key="jail.name" class="border rounded-lg" :class="isDark ? 'border-slate-700' : 'border-slate-200'">
+              <div class="px-4 py-2 border-b bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center">
+                <span class="font-bold text-sm" :class="isDark ? 'text-slate-200' : 'text-slate-700'">{{ jail.name }}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full" :class="isDark ? 'bg-red-900/30 text-red-400' : 'bg-red-100 text-red-600'">{{ jail.banned_ips.length }} Banned</span>
+              </div>
+              <div class="p-3">
+                <div v-if="jail.banned_ips.length === 0" class="text-xs text-slate-500 italic">No IPs currently banned.</div>
+                <div v-else class="flex flex-wrap gap-2">
+                  <div v-for="ip in jail.banned_ips" :key="ip" class="flex items-center gap-2 px-2 py-1 rounded border text-xs" :class="isDark ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-700'">
+                    <span class="font-mono">{{ ip }}</span>
+                    <button @click="unbanIp(jail.name, ip)" class="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 font-bold uppercase" title="Unban this IP">Unban</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="f2bStatus.jails.length === 0" class="text-sm text-slate-500 italic p-4 text-center border border-dashed rounded-lg">No active jails found. Click 'Configure Jails' to enable them.</div>
+          </div>
+
+          <!-- Live Activity Log -->
+          <div class="space-y-2">
+            <div class="flex justify-between items-center">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Fail2Ban Logs</h3>
+              <button @click="fetchF2bLogs" class="text-xs text-brand-500 hover:underline">Refresh</button>
+            </div>
+            <div class="bg-black/90 text-slate-300 font-mono text-[10px] p-4 rounded-lg overflow-y-auto h-[400px] shadow-inner leading-relaxed">
+              <div v-if="f2bLogs.length === 0" class="text-slate-500 italic">No recent logs found...</div>
+              <div v-for="(line, idx) in f2bLogs" :key="idx" 
+                   class="py-0.5 hover:bg-white/5 px-1"
+                   :class="{'text-red-400': line.includes('Ban'), 'text-green-400': line.includes('Unban'), 'text-blue-400': line.includes('Found')}">
+                {{ line }}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- Modal: Jail Config -->
+    <Teleport to="body">
+      <div v-if="showConfigModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
+        <div class="rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <div class="p-4 border-b flex justify-between items-center shrink-0" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
+            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'">
+              <ShieldCheck class="w-4 h-4 text-brand-500"/> Jail Configuration (/etc/fail2ban/jail.local)
+            </h3>
+            <button @click="showConfigModal = false" class="text-slate-400 hover:text-slate-200">✕</button>
+          </div>
+          
+          <div class="flex-1 overflow-hidden flex flex-col md:flex-row">
+            <!-- Sidebar: Jail List -->
+            <div class="w-full md:w-1/3 border-r overflow-y-auto p-4 space-y-2" :class="isDark ? 'border-slate-700 bg-slate-900/30' : 'border-slate-200 bg-slate-50'">
+              <button @click="createNewJail" class="w-full btn-outline border-dashed text-xs py-2 mb-4">+ Create Custom Jail</button>
+              <div v-for="j in f2bConfig" :key="j.name" 
+                   @click="editJail(j)"
+                   class="p-3 border rounded-lg cursor-pointer transition-colors flex justify-between items-center"
+                   :class="[
+                     formConfig.name === j.name ? (isDark ? 'bg-brand-900/30 border-brand-500' : 'bg-brand-50 border-brand-400') : (isDark ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-white'),
+                     !j.enabled ? 'opacity-60' : ''
+                   ]">
+                <div>
+                  <div class="font-bold text-sm" :class="isDark ? 'text-slate-200' : 'text-slate-700'">{{ j.name }}</div>
+                  <div class="text-[10px] text-slate-500">{{ j.port || 'Any port' }}</div>
+                </div>
+                <div class="w-2 h-2 rounded-full" :class="j.enabled ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'"></div>
+              </div>
+            </div>
+
+            <!-- Editor Pane -->
+            <div class="flex-1 p-6 overflow-y-auto">
+              <div v-if="!formConfig.name" class="h-full flex items-center justify-center text-slate-500 text-sm">
+                Select a jail from the list or create a new one to edit.
+              </div>
+              <div v-else class="space-y-4">
+                <div class="flex justify-between items-center">
+                  <h3 class="text-lg font-bold">{{ formConfig.name === 'DEFAULT' ? 'Global Settings' : `Edit Jail: ${formConfig.name}` }}</h3>
+                  <label class="flex items-center gap-2 cursor-pointer" v-if="formConfig.name !== 'DEFAULT'">
+                    <span class="text-sm font-semibold">Enable</span>
+                    <input type="checkbox" v-model="formConfig.enabled" class="rounded text-brand-600 focus:ring-brand-500" />
+                  </label>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                  <div v-if="formConfig.name !== 'DEFAULT'">
+                    <label class="block text-xs font-semibold mb-1 text-slate-500">Jail Name</label>
+                    <input v-model="formConfig.name" type="text" class="input-field w-full text-sm" :disabled="f2bConfig.find(x => x.name === formConfig.name) && formConfig.name !== 'custom-'" />
+                  </div>
+                  <div v-if="formConfig.name !== 'DEFAULT'">
+                    <label class="block text-xs font-semibold mb-1 text-slate-500">Port (e.g. ssh, http, 8080)</label>
+                    <input v-model="formConfig.port" type="text" class="input-field w-full text-sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-500">Max Retry</label>
+                    <input v-model="formConfig.maxretry" type="text" placeholder="e.g. 5" class="input-field w-full text-sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-500">Find Time</label>
+                    <input v-model="formConfig.findtime" type="text" placeholder="e.g. 10m" class="input-field w-full text-sm" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-semibold mb-1 text-slate-500">Ban Time</label>
+                    <input v-model="formConfig.bantime" type="text" placeholder="e.g. 1h" class="input-field w-full text-sm" />
+                  </div>
+                  <div class="col-span-2" v-if="formConfig.name !== 'DEFAULT'">
+                    <label class="block text-xs font-semibold mb-1 text-slate-500">Log Path</label>
+                    <input v-model="formConfig.logpath" type="text" placeholder="e.g. /var/log/auth.log" class="input-field w-full text-sm font-mono" />
+                  </div>
+                  <div class="col-span-2" v-if="formConfig.name !== 'DEFAULT'">
+                    <label class="block text-xs font-semibold mb-1 text-slate-500">Filter (from /etc/fail2ban/filter.d/)</label>
+                    <input v-model="formConfig.filter" type="text" placeholder="e.g. sshd or nginx-http-auth" class="input-field w-full text-sm font-mono" />
+                  </div>
+                </div>
+
+                <div class="pt-4 flex justify-end">
+                  <button @click="saveJailConfig" class="btn-primary">Save & Reload Service</button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-        <div v-if="f2bStatus.jails.length === 0" class="text-sm text-slate-500 italic p-4 text-center">Fail2Ban is active but no jails are reporting status. Check /etc/fail2ban/jail.local</div>
       </div>
-    </section>
+    </Teleport>
 
     <!-- ── SPEEDTEST SECTION ── -->
     <section class="card">
