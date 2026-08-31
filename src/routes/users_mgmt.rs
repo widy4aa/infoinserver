@@ -369,7 +369,7 @@ pub async fn get_ssh_keys_handler(
 }
 
 pub async fn add_ssh_key_handler(
-    State(state): axum::extract::State<crate::AppState>,
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(username): Path<String>,
     Extension(auth): Extension<AuthUser>,
     Json(payload): Json<AddSshKeyRequest>,
@@ -397,10 +397,11 @@ pub async fn add_ssh_key_handler(
     }).await.unwrap();
 
     let p = password.clone();
+    let path_clone = path.clone();
     let out = tokio::task::spawn_blocking(move || {
         // Kita escape echo dengan aman
         let escaped = key.replace("'", "'\\''");
-        let cmd = format!("echo '{}' >> {}", escaped, path);
+        let cmd = format!("echo '{}' >> {}", escaped, path_clone);
         sudo_exec(&p, &["sh", "-c", &cmd])
     }).await.unwrap()
       .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -408,8 +409,9 @@ pub async fn add_ssh_key_handler(
     if out.status.success() {
         // Pastikan hak akses file benar
         let p = password.clone();
+        let path_clone2 = path.clone();
         let _ = tokio::task::spawn_blocking(move || {
-            let _ = sudo_exec(&p, &["chmod", "600", &path]);
+            let _ = sudo_exec(&p, &["chmod", "600", &path_clone2]);
         }).await.unwrap();
 
         crate::routes::logs::log_activity(&state.db_pool, "WARNING", "SSH Key Added", &format!("Added SSH key to user {}", username)).await;
@@ -421,7 +423,7 @@ pub async fn add_ssh_key_handler(
 }
 
 pub async fn delete_ssh_key_handler(
-    State(state): axum::extract::State<crate::AppState>,
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
     Path(username): Path<String>,
     Extension(auth): Extension<AuthUser>,
     Json(payload): Json<DeleteSshKeyRequest>,
@@ -430,8 +432,9 @@ pub async fn delete_ssh_key_handler(
     let path = get_authorized_keys_path(&username);
     let key_to_remove = payload.key.trim().to_string();
 
+    let path_clone1 = path.clone();
     let out = tokio::task::spawn_blocking(move || {
-        sudo_exec(&password, &["cat", &path])
+        sudo_exec(&password, &["cat", &path_clone1])
     }).await.unwrap();
 
     if let Ok(output) = out {
@@ -443,9 +446,10 @@ pub async fn delete_ssh_key_handler(
             
             // Tulis kembali
             let p = auth.0.pwd.clone();
+            let path_clone2 = path.clone();
             let out2 = tokio::task::spawn_blocking(move || {
-                let encoded = unsafe { String::from_utf8_unchecked(base64::encode(new_content_str).into_bytes()) };
-                let cmd = format!("echo '{}' | base64 -d > {}", encoded, path);
+                let escaped_content = new_content_str.replace("'", "'\\''");
+                let cmd = format!("echo '{}' > {}", escaped_content, path_clone2);
                 sudo_exec(&p, &["sh", "-c", &cmd])
             }).await.unwrap()
               .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;

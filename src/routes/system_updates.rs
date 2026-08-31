@@ -3,7 +3,7 @@ use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::Response,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::process::Stdio;
 use tokio::process::Command;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -111,7 +111,7 @@ async fn handle_upgrade_ws(mut socket: WebSocket, password: String, pool: sqlx::
     let is_apt = std::process::Command::new("which").arg("apt-get").output().map(|o| o.status.success()).unwrap_or(false);
     let is_pacman = std::process::Command::new("which").arg("pacman").output().map(|o| o.status.success()).unwrap_or(false);
 
-    let (cmd, mut args) = if is_apt {
+    let (cmd, args) = if is_apt {
         ("sudo", vec!["-S", "apt-get", "upgrade", "-y"])
     } else if is_pacman {
         ("sudo", vec!["-S", "pacman", "-Syu", "--noconfirm"])

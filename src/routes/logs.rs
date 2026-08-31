@@ -1,7 +1,6 @@
 use axum::{extract::{State, Extension}, Json, http::StatusCode};
 use serde::Serialize;
 use sqlx::FromRow;
-use std::process::Command;
 use crate::AppState;
 use crate::auth::jwt_middleware::AuthUser;
 use crate::routes::process_mgmt::sudo_exec;
