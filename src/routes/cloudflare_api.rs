@@ -345,10 +345,10 @@ pub async fn check_health_status(
                 }
             }
             Err(e) => {
-                if e.is_dns() {
+                if e.is_connect() {
                     health_results.push(HostnameHealth {
                         hostname: host,
-                        status: "DNS_PROBE_FINISHED_NXDOMAIN. CNAME missing or typo.".to_string(),
+                        status: "Connection/DNS failed (NXDOMAIN). CNAME missing or typo.".to_string(),
                         code: "NXDOMAIN".to_string(),
                     });
                 } else if e.is_timeout() {
