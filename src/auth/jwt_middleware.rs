@@ -20,9 +20,14 @@ pub async fn jwt_auth_middleware(
     mut request: Request<Body>,
     next: Next,
 ) -> Result<Response, impl IntoResponse> {
-    // Whitelist: endpoint auth & websocket tidak perlu token (akan divalidasi sendiri di handler WS)
     let path = request.uri().path().to_string();
-    if path.starts_with("/api/auth/") || path.starts_with("/api/metrics/ws") {
+
+    // Whitelist: endpoint auth & websocket tidak perlu token langsung dari header
+    // (WebSocket endpoints menggunakan ?token= query param, divalidasi di bawah)
+    if path.starts_with("/api/auth/") 
+        || path.starts_with("/api/metrics/ws")
+        || path.starts_with("/api/cloudflare/logs/ws")
+        || path.starts_with("/api/system/os_updates/ws") {
         return Ok(next.run(request).await);
     }
 

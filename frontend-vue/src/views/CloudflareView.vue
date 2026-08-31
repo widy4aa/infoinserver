@@ -11,7 +11,7 @@ import {
 } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
-const { getActiveServerUrl } = useServerStore()
+const { getActiveServerUrl, getToken, activeServerId } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
 const { isDark } = useThemeStore()
 
@@ -392,14 +392,6 @@ const stopService = async () => {
   })
 }
 
-const quickRefCommands = [
-  { command: 'sudo systemctl restart cloudflared', description: 'Apply latest ingress rules from config.yml' },
-  { command: 'sudo systemctl status cloudflared', description: 'Check if tunnel daemon is active (running)' },
-  { command: 'sudo journalctl -u cloudflared -f', description: 'Monitor live traffic & error logs' },
-  { command: 'cloudflared tunnel list', description: 'Show UUID and connection status of your tunnel' },
-  { command: 'cat /etc/cloudflared/config.yml', description: 'View current hostname routing config' },
-  { command: 'cloudflared tunnel login', description: 'Authorize server with Cloudflare (creates cert.pem)' },
-]
 
 // ── Live Logs via WebSocket ──────────────────────────────────
 const logs = ref([])
@@ -415,6 +407,9 @@ const connectLogsWs = () => {
   logs.value = []
 
   let wsUrl = getActiveServerUrl().replace(/^http/, 'ws') + '/api/cloudflare/logs/ws'
+  // Tambahkan JWT token via query param (WebSocket tidak bisa kirim header)
+  const token = getToken(activeServerId.value)
+  if (token) wsUrl += '?token=' + encodeURIComponent(token)
   ws = new WebSocket(wsUrl)
 
   ws.onopen = () => {
@@ -888,30 +883,6 @@ onUnmounted(() => {
                     </span>
                   </div>
                 </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ── Section 5: Quick Reference ────────────────────────── -->
-      <section v-if="status.installed" class="card">
-        <h2 class="card-title">
-          <Terminal class="w-5 h-5 text-brand-500" />
-          Quick Reference — Useful Commands
-        </h2>
-        <div class="mt-3 overflow-x-auto">
-          <table class="w-full text-xs">
-            <thead class="border-b" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
-              <tr>
-                <th class="text-left px-3 py-2 font-semibold" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Command</th>
-                <th class="text-left px-3 py-2 font-semibold" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Description</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y" :class="isDark ? 'divide-slate-700' : 'divide-slate-100'">
-              <tr v-for="cmd in quickRefCommands" :key="cmd.command" :class="isDark ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'">
-                <td class="px-3 py-2.5 font-mono whitespace-nowrap" :class="isDark ? 'text-slate-300' : 'text-slate-700'">{{ cmd.command }}</td>
-                <td class="px-3 py-2.5" :class="isDark ? 'text-slate-400' : 'text-slate-500'">{{ cmd.description }}</td>
               </tr>
             </tbody>
           </table>

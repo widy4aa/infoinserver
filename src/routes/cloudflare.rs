@@ -451,32 +451,54 @@ pub async fn cloudflare_logs_ws_handler(
 
 async fn handle_cloudflare_logs_ws(mut socket: WebSocket) {
     // Jalankan journalctl -u cloudflared -f -n 50 --no-pager
-    let mut child = Command::new("journalctl")
+    let child_result = Command::new("journalctl")
         .args(["-u", "cloudflared", "-f", "-n", "50", "--no-pager", "-o", "cat"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to spawn journalctl process");
+        .spawn();
 
-    let stdout = child.stdout.take().expect("Failed to take stdout");
+    let mut child = match child_result {
+        Ok(c) => c,
+        Err(e) => {
+            let msg = format!("[ERROR] Failed to spawn journalctl: {}. Make sure systemd/journalctl is installed.", e);
+            let _ = socket.send(Message::Text(msg.into())).await;
+            return;
+        }
+    };
+
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            let _ = socket.send(Message::Text("[ERROR] Failed to capture journalctl stdout.".into())).await;
+            let _ = child.kill().await;
+            return;
+        }
+    };
+
     let mut reader = BufReader::new(stdout).lines();
 
     loop {
-        // Cek jika koneksi WebSocket tertutup
         tokio::select! {
             line = reader.next_line() => {
                 match line {
                     Ok(Some(log_line)) => {
                         if socket.send(Message::Text(log_line.into())).await.is_err() {
-                            break; // Koneksi terputus
+                            break;
                         }
                     }
-                    Ok(None) => break, // EOF reached (unlikely with -f)
-                    Err(_) => break, // Error membaca log
+                    Ok(None) => {
+                        // EOF — journalctl tidak menghasilkan output (service mungkin tidak aktif)
+                        let _ = socket.send(Message::Text("[INFO] journalctl reached EOF. cloudflared service may not be running.".into())).await;
+                        break;
+                    }
+                    Err(e) => {
+                        let msg = format!("[ERROR] Failed to read log line: {}", e);
+                        let _ = socket.send(Message::Text(msg.into())).await;
+                        break;
+                    }
                 }
             }
             msg = socket.recv() => {
-                // Client terputus atau mengirim pesan close
                 if let Some(Ok(Message::Close(_))) | None = msg {
                     break;
                 }
@@ -484,6 +506,5 @@ async fn handle_cloudflare_logs_ws(mut socket: WebSocket) {
         }
     }
 
-    // Jika loop berhenti, matikan proses journalctl
     let _ = child.kill().await;
 }
