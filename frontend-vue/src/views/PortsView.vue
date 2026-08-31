@@ -343,7 +343,10 @@ onUnmounted(() => {
                   <div class="text-xs font-mono" :class="isDark ? 'text-slate-400' : 'text-slate-400'">{{ iface.mac_address }}</div>
                 </td>
                 <td class="table-td font-mono text-xs leading-relaxed">
-                  <div v-for="ip in iface.ip_networks" :key="ip">{{ ip }}</div>
+                  <div v-for="ip in iface.ip_networks" :key="ip" class="mb-0.5">{{ ip }}</div>
+                  <div v-if="iface.gateway" class="text-[10px] mt-1 pt-1 border-t border-slate-200 dark:border-slate-700" :class="isDark ? 'text-emerald-400/80' : 'text-emerald-600/80'">
+                    Gateway: {{ iface.gateway }}
+                  </div>
                 </td>
                 <td class="table-td text-right">
                   <div class="font-medium" :class="isDark ? 'text-green-400' : 'text-green-600'">↓ {{ (iface.rx_bytes/1048576).toFixed(2) }}</div>
@@ -427,18 +430,18 @@ onUnmounted(() => {
       
       <div v-else-if="f2bStatus && f2bStatus.installed" class="space-y-6">
         
-        <div class="flex gap-2">
-          <button @click="openConfigModal" class="btn-primary text-xs h-8 px-3 whitespace-nowrap">
+        <div class="flex flex-col md:flex-row gap-3 items-center">
+          <button @click="openConfigModal" class="btn-primary text-xs h-8 px-3 whitespace-nowrap shrink-0 w-full md:w-auto">
             <ShieldCheck class="w-3.5 h-3.5" /> Configure Jails
           </button>
           
           <!-- Manual Ban Form -->
-          <div class="flex flex-1 gap-2 border rounded-lg p-1 items-center" :class="isDark ? 'border-slate-700 bg-slate-800/30' : 'border-slate-200 bg-slate-50'">
-            <select v-model="formManualBan.jail" class="input-field py-1 text-xs border-none bg-transparent">
+          <div class="grid grid-cols-[100px_1fr_auto] gap-2 w-full flex-1">
+            <select v-model="formManualBan.jail" class="input-field py-1 px-2 text-xs h-8">
               <option v-for="j in f2bStatus.jails" :key="j.name" :value="j.name">{{ j.name }}</option>
             </select>
-            <input v-model="formManualBan.ip" type="text" placeholder="IP Address to ban..." class="input-field py-1 text-xs border-none bg-transparent flex-1" :disabled="isBanning" @keyup.enter="banIp">
-            <button @click="banIp" class="btn-primary py-1 px-3 text-xs whitespace-nowrap" :disabled="isBanning">
+            <input v-model="formManualBan.ip" type="text" placeholder="IP Address to ban..." class="input-field py-1 px-3 text-xs h-8 min-w-0" :disabled="isBanning" @keyup.enter="banIp">
+            <button @click="banIp" class="btn-danger py-1 px-3 text-xs h-8 whitespace-nowrap" :disabled="isBanning">
                {{ isBanning ? 'Banning...' : 'Ban IP' }}
             </button>
           </div>
