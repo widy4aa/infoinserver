@@ -116,6 +116,7 @@ async fn main() {
         .route("/api/ports", get(routes::ports::listening_ports_handler))
         .route("/api/files/config", get(routes::files::get_files_config_handler))
         .route("/api/files/list", get(routes::files::list_files_handler))
+        .route("/api/files/search", get(routes::files::search_files_handler))
         .route("/api/files/download", get(routes::files::download_file_handler))
         .route("/api/files/upload", post(routes::files::upload_file_handler))
         .route("/api/files/fetch", post(routes::files::fetch_url_handler))

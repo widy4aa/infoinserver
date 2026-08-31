@@ -354,6 +354,9 @@ pub struct DetailedFileInfo {
     pub is_dir: bool,
     pub size_bytes: u64,
     pub permissions_octal: String, // e.g. "0755"
+    pub permissions_symbolic: String, // e.g. "rwxr-xr-x"
+    pub modified_at: u64, // Unix timestamp
+    pub owner: String,   // "user:group"
 }
 
 pub async fn file_info_handler(Query(query): Query<FileQuery>) -> Result<Json<DetailedFileInfo>, (StatusCode, Json<serde_json::Value>)> {
@@ -372,8 +375,26 @@ pub async fn file_info_handler(Query(query): Query<FileQuery>) -> Result<Json<De
 
     use std::os::unix::fs::PermissionsExt;
     let mode = metadata.permissions().mode();
-    // Ambil 3 digit terakhir (e.g. 755 dari 33261)
     let permissions_octal = format!("{:04o}", mode & 0o7777);
+
+    // Build symbolic permissions string (e.g. "rwxr-xr-x")
+    let symbolic = mode_to_symbolic(mode);
+
+    // Modified time
+    let modified_at = metadata.modified()
+        .unwrap_or(std::time::UNIX_EPOCH)
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // Owner via stat command
+    let owner = Command::new("stat")
+        .args(["--printf=%U:%G", valid_path.to_str().unwrap_or("")])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_else(|| "unknown:unknown".to_string());
 
     Ok(Json(DetailedFileInfo {
         path: req_path,
@@ -381,5 +402,104 @@ pub async fn file_info_handler(Query(query): Query<FileQuery>) -> Result<Json<De
         is_dir: metadata.is_dir(),
         size_bytes: metadata.len(),
         permissions_octal,
+        permissions_symbolic: symbolic,
+        modified_at,
+        owner,
     }))
+}
+
+fn mode_to_symbolic(mode: u32) -> String {
+    let types = [
+        (0o400, 'r'), (0o200, 'w'), (0o100, 'x'),  // owner
+        (0o040, 'r'), (0o020, 'w'), (0o010, 'x'),  // group
+        (0o004, 'r'), (0o002, 'w'), (0o001, 'x'),  // others
+    ];
+    let mut s = String::new();
+    for (bit, ch) in &types {
+        if mode & bit != 0 { s.push(*ch); } else { s.push('-'); }
+    }
+    s
+}
+
+// ── SEARCH ──
+
+#[derive(Deserialize)]
+pub struct SearchQuery {
+    pub path: Option<String>,
+    pub query: String,
+}
+
+#[derive(Serialize)]
+pub struct SearchResult {
+    pub name: String,
+    pub full_path: String,
+    pub relative_path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub writable: bool,
+}
+
+pub async fn search_files_handler(Query(query): Query<SearchQuery>) -> Result<Json<Vec<SearchResult>>, (StatusCode, String)> {
+    let search_term = query.query.trim().to_string();
+    if search_term.is_empty() || search_term.len() < 2 {
+        return Err((StatusCode::BAD_REQUEST, "Search query must be at least 2 characters".to_string()));
+    }
+
+    let base_path = query.path.unwrap_or_else(|| "/".to_string());
+    let valid_base = resolve_path_safe(&base_path)
+        .map_err(|e| (StatusCode::FORBIDDEN, e))?;
+
+    let home_root = get_home_root();
+    let removable_mounts = get_removable_mounts();
+
+    // Gunakan 'find' command — exclude /proc dan /sys yang bisa hang
+    let pattern = format!("*{}*", search_term);
+    let out = Command::new("find")
+        .args([
+            valid_base.to_str().unwrap_or("/"),
+            "-maxdepth", "8",
+            "-iname", &pattern,
+            "-not", "-path", "*/proc/*",
+            "-not", "-path", "*/sys/*",
+            "-not", "-path", "*/.git/*",
+            "-not", "-path", "*/node_modules/*",
+        ])
+        .output()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Search failed: {}", e)))?;
+
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let base_prefix = format!("{}/", valid_base.display());
+
+    let mut results = Vec::new();
+    for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
+        let full_path = line.trim().to_string();
+        let path = std::path::Path::new(&full_path);
+
+        if let Ok(meta) = std::fs::metadata(path) {
+            let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let relative_path = full_path.strip_prefix(&base_prefix)
+                .unwrap_or(&full_path)
+                .to_string();
+            let writable = check_write_permission(path, &home_root, &removable_mounts);
+
+            results.push(SearchResult {
+                name,
+                full_path,
+                relative_path,
+                is_dir: meta.is_dir(),
+                size: meta.len(),
+                writable,
+            });
+        }
+
+        // Batasi 500 hasil agar tidak overflow
+        if results.len() >= 500 {
+            break;
+        }
+    }
+
+    // Sort: folder dulu, lalu file
+    results.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name)));
+
+    Ok(Json(results))
 }
