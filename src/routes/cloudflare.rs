@@ -5,8 +5,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
-use std::process::Command as StdCommand; // Rename standard command
-use tokio::process::Command; // Async command for WebSocket
+use std::process::Command as StdCommand;
+use tokio::process::Command;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::auth::jwt_middleware::AuthUser;
 use crate::routes::process_mgmt::sudo_exec;
@@ -21,6 +21,7 @@ pub struct CloudflareStatus {
     pub config_exists: bool,
     pub tunnel_uuid: Option<String>,
     pub tunnel_name: Option<String>,
+    pub service_uptime_secs: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -60,6 +61,7 @@ pub async fn get_cloudflare_status(
             config_exists: false,
             tunnel_uuid: None,
             tunnel_name: None,
+            service_uptime_secs: None,
         }));
     }
 
@@ -127,11 +129,9 @@ pub async fn get_cloudflare_status(
         if let Ok(out) = StdCommand::new("cloudflared").args(["tunnel", "list"]).output() {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-                // Format stdout biasanya: ID  NAME  CREATED  CONNECTIONS
                 for line in stdout.lines() {
                     if line.contains(uuid) {
                         let parts: Vec<&str> = line.split_whitespace().collect();
-                        // Asumsi bagian ke-2 adalah NAME (index 1)
                         if parts.len() >= 2 {
                             tunnel_name = Some(parts[1].to_string());
                         }
@@ -142,6 +142,42 @@ pub async fn get_cloudflare_status(
         }
     }
 
+    // 8. Ambil uptime service dari systemctl
+    let service_uptime_secs: Option<u64> = if service_active {
+        StdCommand::new("systemctl")
+            .args(["show", "cloudflared", "--property=ActiveEnterTimestamp"])
+            .output()
+            .ok()
+            .and_then(|out| {
+                let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                // Format: ActiveEnterTimestamp=Mon 2026-08-31 10:00:00 UTC
+                let ts_part = stdout
+                    .split('=')
+                    .nth(1)?
+                    .trim()
+                    .to_string();
+                if ts_part.is_empty() || ts_part == "n/a" {
+                    return None;
+                }
+                // Parse menggunakan chrono
+                let dt = chrono::DateTime::parse_from_rfc2822(&ts_part)
+                    .or_else(|_| -> Result<chrono::DateTime<chrono::FixedOffset>, chrono::ParseError> {
+                        // Coba format alternatif: "Mon 2026-08-31 10:00:00 UTC"
+                        let stripped = ts_part.split_whitespace().skip(1).collect::<Vec<_>>().join(" ");
+                        let stripped = stripped.trim_end_matches(" UTC");
+                        chrono::NaiveDateTime::parse_from_str(stripped, "%Y-%m-%d %H:%M:%S")
+                            .map(|ndt| ndt.and_utc().fixed_offset())
+                    });
+                dt.ok().map(|parsed| {
+                    let now = chrono::Utc::now();
+                    let diff = now.signed_duration_since(parsed.with_timezone(&chrono::Utc));
+                    diff.num_seconds().max(0) as u64
+                })
+            })
+    } else {
+        None
+    };
+
     Ok(Json(CloudflareStatus {
         installed: true,
         version,
@@ -151,6 +187,7 @@ pub async fn get_cloudflare_status(
         config_exists,
         tunnel_uuid,
         tunnel_name,
+        service_uptime_secs,
     }))
 }
 
