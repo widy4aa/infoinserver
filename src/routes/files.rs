@@ -26,9 +26,16 @@ pub struct FetchUrlRequest {
     pub path: String,
 }
 
-/// Helper: dapatkan home_root dari env
+/// Helper: dapatkan home_root dari env, dengan expand $HOME otomatis
 fn get_home_root() -> String {
-    env::var("FILE_ROOT").unwrap_or_else(|_| "/".to_string())
+    let val = env::var("FILE_ROOT").unwrap_or_else(|_| "$HOME".to_string());
+    if val == "$HOME" || val.starts_with("$HOME/") {
+        // Expand $HOME ke home directory aktual dari environment OS
+        let home = env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+        val.replace("$HOME", &home)
+    } else {
+        val
+    }
 }
 
 /// Endpoint untuk membaca konfigurasi file manager (dibutuhkan frontend untuk tentukan read-only)

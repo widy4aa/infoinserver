@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
@@ -340,8 +340,10 @@ const getFileIcon = (f) => {
 }
 
 // ── LIFECYCLE ──
+let diskRefreshTimer = null
+
 onMounted(async () => {
-  // Ambil config (home_root)
+  // Ambil config dulu (sequential), baru fetch files pakai homeRoot yang sudah terisi
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/files/config`)
     if (res.ok) {
@@ -350,7 +352,16 @@ onMounted(async () => {
     }
   } catch (e) {}
 
-  await Promise.all([fetchFiles(homeRoot.value), fetchDisks()])
+  // Fetch files setelah homeRoot terisi, fetch disks bisa paralel
+  fetchFiles(homeRoot.value)
+  fetchDisks()
+
+  // Auto-refresh disk setiap 5 detik agar USB yang baru dicolok terdeteksi otomatis
+  diskRefreshTimer = setInterval(fetchDisks, 5000)
+})
+
+onUnmounted(() => {
+  if (diskRefreshTimer) clearInterval(diskRefreshTimer)
 })
 </script>
 
@@ -389,10 +400,10 @@ onMounted(async () => {
           <div v-if="disk.children">
             <div v-for="part in disk.children" :key="part.name"
                  class="ml-2 rounded-lg p-2 mb-1 cursor-pointer transition-colors"
-                 :class="part.mountpoint && currentPath.startsWith(part.mountpoint) 
+                 :class="part.mountpoint && currentPath.startsWith(part.mountpoint) && part.mountpoint !== '[SWAP]'
                     ? (isDark ? 'bg-brand-900/30 border border-brand-700' : 'bg-brand-50 border border-brand-200')
                     : (isDark ? 'hover:bg-slate-800 border border-transparent' : 'hover:bg-slate-100 border border-transparent')"
-                 @click="part.mounted && part.mountpoint ? browseMount(part.mountpoint) : null">
+                 @click="part.mountpoint && part.mountpoint !== '[SWAP]' ? browseMount(part.mountpoint) : null">
               <div class="flex items-center justify-between">
                 <div>
                   <div class="text-xs font-semibold" :class="isDark ? 'text-slate-300' : 'text-slate-700'">
