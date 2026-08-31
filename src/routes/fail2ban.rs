@@ -343,3 +343,82 @@ pub async fn save_jail_config_handler(
         Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to write config".to_string()))
     }
 }
+
+/// Ambil daftar filter yang tersedia dari /etc/fail2ban/filter.d/
+pub async fn get_filters_handler(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<Vec<String>>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+
+    let out = sudo_exec(&password, &["ls", "/etc/fail2ban/filter.d/"])
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to list filters: {}", e)))?;
+
+    if out.status.success() {
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        let filters: Vec<String> = stdout
+            .lines()
+            .filter(|l| l.ends_with(".conf"))
+            .map(|l| l.replace(".conf", "").trim().to_string())
+            .collect();
+        Ok(Json(filters))
+    } else {
+        Ok(Json(vec![]))
+    }
+}
+
+/// Hapus jail dari jail.local
+pub async fn delete_jail_handler(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+    axum::extract::Path(jail_name): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    let config_path = "/etc/fail2ban/jail.local";
+
+    if jail_name.is_empty() || jail_name.to_lowercase() == "default" {
+        return Err((StatusCode::BAD_REQUEST, "Cannot delete DEFAULT jail".to_string()));
+    }
+
+    let out = sudo_exec(&password, &["cat", config_path])
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let content = String::from_utf8_lossy(&out.stdout).to_string();
+
+    let mut new_lines = Vec::new();
+    let mut in_target = false;
+    let mut found = false;
+
+    for line in content.lines() {
+        if line.trim().starts_with('[') && line.trim().ends_with(']') {
+            let name = line.trim().trim_matches(|c| c == '[' || c == ']').to_string();
+            if name == jail_name {
+                in_target = true;
+                found = true;
+                continue;
+            } else {
+                in_target = false;
+            }
+        }
+        if !in_target {
+            new_lines.push(line.to_string());
+        }
+    }
+
+    if !found {
+        return Err((StatusCode::NOT_FOUND, format!("Jail '{}' not found in config", jail_name)));
+    }
+
+    let new_content = new_lines.join("\n") + "\n";
+    let escaped = new_content.replace("'", "'\\''");
+    let cmd = format!("echo '{}' > {}", escaped, config_path);
+    let write_out = sudo_exec(&password, &["sh", "-c", &cmd])
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if write_out.status.success() {
+        let _ = sudo_exec(&password, &["systemctl", "restart", "fail2ban"]);
+        crate::routes::logs::log_activity(&state.db_pool, "WARNING", "Fail2Ban Delete Jail", &format!("Deleted jail: {}", jail_name)).await;
+        Ok(Json(serde_json::json!({"status": "success", "message": format!("Jail '{}' deleted", jail_name)})))
+    } else {
+        Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete jail from config".to_string()))
+    }
+}

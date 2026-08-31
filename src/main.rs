@@ -160,6 +160,8 @@ async fn main() {
         .route("/api/fail2ban/logs", get(routes::fail2ban::get_logs_handler))
         .route("/api/fail2ban/config", get(routes::fail2ban::get_jails_config_handler))
         .route("/api/fail2ban/config", post(routes::fail2ban::save_jail_config_handler))
+        .route("/api/fail2ban/config/{name}", delete(routes::fail2ban::delete_jail_handler))
+        .route("/api/fail2ban/filters", get(routes::fail2ban::get_filters_handler))
         .route("/api/cloudflare/create", post(routes::cloudflare::create_tunnel))
         .route("/api/cloudflare/tunnel", delete(routes::cloudflare::delete_tunnel))
         .route("/api/cloudflare/config", get(routes::cloudflare_api::get_local_config))
