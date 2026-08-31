@@ -122,6 +122,63 @@ pub async fn get_users_handler() -> Result<Json<Vec<UserInfo>>, (StatusCode, Jso
     Ok(Json(users))
 }
 
+#[derive(Deserialize)]
+pub struct CreateGroupReq {
+    pub name: String,
+}
+
+/// POST /api/groups
+pub async fn create_group_handler(
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
+    Extension(auth): Extension<AuthUser>,
+    Json(payload): Json<CreateGroupReq>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if !payload.name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "Invalid group name" }))));
+    }
+
+    let p = auth.0.pwd;
+    let g = payload.name.clone();
+    let out = tokio::task::spawn_blocking(move || {
+        sudo_exec(&p, &["groupadd", &g])
+    }).await.unwrap()
+      .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
+
+    if out.status.success() {
+        crate::routes::logs::log_activity(&state.db_pool, "INFO", "Group Created", &format!("Created new group {}", payload.name)).await;
+        Ok(Json(serde_json::json!({ "status": "success", "message": format!("Group {} created", payload.name) })))
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr);
+        Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("groupadd failed: {}", err) }))))
+    }
+}
+
+/// DELETE /api/groups/:groupname
+pub async fn delete_group_handler(
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
+    Path(groupname): Path<String>,
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    if !groupname.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "Invalid group name" }))));
+    }
+
+    let p = auth.0.pwd;
+    let g = groupname.clone();
+    let out = tokio::task::spawn_blocking(move || {
+        sudo_exec(&p, &["groupdel", &g])
+    }).await.unwrap()
+      .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
+
+    if out.status.success() {
+        crate::routes::logs::log_activity(&state.db_pool, "WARNING", "Group Deleted", &format!("Deleted group {}", groupname)).await;
+        Ok(Json(serde_json::json!({ "status": "success", "message": format!("Group {} deleted", groupname) })))
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr);
+        Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("groupdel failed: {}", err) }))))
+    }
+}
+
 /// Mengambil daftar semua grup
 pub async fn get_groups_handler() -> Result<Json<Vec<GroupInfo>>, (StatusCode, Json<serde_json::Value>)> {
     let group = fs::read_to_string("/etc/group")
@@ -186,27 +243,12 @@ pub async fn create_user_handler(
     // 3. Jika ada password, set password: echo "username:password" | chpasswd
     if let Some(user_pass) = payload.password {
         if !user_pass.is_empty() {
-            let creds = format!("{}:{}", payload.username, user_pass);
+            let p = pwd.clone();
+            let u = payload.username.clone();
             let out_pass = tokio::task::spawn_blocking(move || {
-                use std::process::{Command, Stdio};
-                use std::io::Write;
-                
-                let mut child = Command::new("sudo")
-                    .arg("-S")
-                    .arg("-p")
-                    .arg("")
-                    .arg("chpasswd")
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()?;
-            
-                if let Some(stdin) = child.stdin.as_mut() {
-                    let _ = stdin.write_all(format!("{}\n", pwd).as_bytes());
-                    let _ = stdin.write_all(creds.as_bytes());
-                }
-            
-                child.wait_with_output()
+                let escaped_pass = user_pass.replace("'", "'\\''");
+                let cmd = format!("echo '{}:{}' | chpasswd", u, escaped_pass);
+                sudo_exec(&p, &["sh", "-c", &cmd])
             }).await.unwrap()
               .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 
@@ -230,26 +272,14 @@ pub async fn change_password_handler(
         return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "Invalid username" }))));
     }
 
-    let pwd = auth.0.pwd;
-    let creds = format!("{}:{}", username, payload.password);
+    let p = auth.0.pwd;
+    let u = username.clone();
+    let user_pass = payload.password.clone();
 
     let out_pass = tokio::task::spawn_blocking(move || {
-        use std::process::{Command, Stdio};
-        use std::io::Write;
-        let mut child = Command::new("sudo")
-            .arg("-S")
-            .arg("-p")
-            .arg("")
-            .arg("chpasswd")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            let _ = stdin.write_all(format!("{}\n", pwd).as_bytes());
-            let _ = stdin.write_all(creds.as_bytes());
-        }
-        child.wait_with_output()
+        let escaped_pass = user_pass.replace("'", "'\\''");
+        let cmd = format!("echo '{}:{}' | chpasswd", u, escaped_pass);
+        sudo_exec(&p, &["sh", "-c", &cmd])
     }).await.unwrap()
       .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))))?;
 

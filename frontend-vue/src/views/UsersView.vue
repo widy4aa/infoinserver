@@ -4,54 +4,92 @@ import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
 import { useThemeStore } from '../stores/themeStore'
-import { Users, UserPlus, Key, Shield, Trash2, Loader2, X, Lock } from 'lucide-vue-next'
+import { Users, UserPlus, Key, Shield, Trash2, Loader2, X, Lock, UsersRound } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
 const { isDark } = useThemeStore()
 
+// ── TABS STATE ──
+const activeTab = ref('users') // 'users', 'groups'
+
+// ── DATA STATE ──
 const users = ref([])
 const groups = ref([])
 const isLoading = ref(true)
 
-const showSystemUsers = ref(false)
-
-const filteredUsers = computed(() => {
-  if (showSystemUsers.value) return users.value
-  return users.value.filter(u => !u.is_system)
-})
-
-// Modals State
-const showAddModal = ref(false)
-const showPassModal = ref(false)
-const showGroupModal = ref(false)
-
-// Forms State
-const formUser = ref({ username: '', password: '' })
-const formPass = ref({ username: '', password: '' })
-const formGroup = ref({ username: '', selected: [] })
-
 const fetchUsersAndGroups = async () => {
-  isLoading.value = true
   try {
-    const [resU, resG] = await Promise.all([
+    isLoading.value = true
+    const [uRes, gRes] = await Promise.all([
       apiFetch(`${getActiveServerUrl()}/api/users`),
       apiFetch(`${getActiveServerUrl()}/api/groups`)
     ])
-    if (resU.ok) users.value = await resU.json()
-    if (resG.ok) groups.value = await resG.json()
+    
+    if (uRes.ok && gRes.ok) {
+      users.value = await uRes.json()
+      groups.value = await gRes.json()
+    } else {
+      showToast("Error", "Failed to load users or groups", "error")
+    }
   } catch (e) {
-    showToast("Error", "Failed to load users & groups", "error")
+    showToast("Error", "API Error", "error")
   } finally {
     isLoading.value = false
   }
 }
 
-// ── ADD USER ──
-const handleAddUser = async () => {
+// ── CREATE NEW GROUP (Tab Groups) ──
+const newGroupName = ref('')
+const isCreatingGroup = ref(false)
+
+const handleCreateGroup = async () => {
+  if (!newGroupName.value.trim()) return
+  isCreatingGroup.value = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newGroupName.value.trim() })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      showToast("Success", data.message, "success")
+      newGroupName.value = ''
+      await fetchUsersAndGroups()
+    } else throw new Error(data.error || data)
+  } catch (e) {
+    showToast("Error", e.message, "error")
+  } finally {
+    isCreatingGroup.value = false
+  }
+}
+
+// ── DELETE GROUP (Tab Groups) ──
+const handleDeleteGroup = (groupname) => {
+  showConfirm("Hapus Group", `Yakin ingin menghapus grup Linux: ${groupname}?`, async () => {
+    try {
+      const res = await apiFetch(`${getActiveServerUrl()}/api/groups/${groupname}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (res.ok) {
+        showToast("Success", data.message, "success")
+        fetchUsersAndGroups()
+      } else throw new Error(data.error || data)
+    } catch(e) {
+      showToast("Error", e.message, "error")
+    }
+  })
+}
+
+// ── CREATE USER ──
+const showAddModal = ref(false)
+const formUser = ref({ username: '', password: '', is_sudo: false })
+const isSubmittingUser = ref(false)
+
+const handleCreateUser = async () => {
   if (!formUser.value.username) return showToast("Warning", "Username required", "warning")
-  
+  isSubmittingUser.value = true
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/users`, {
       method: 'POST',
@@ -62,11 +100,94 @@ const handleAddUser = async () => {
     if (res.ok) {
       showToast("Success", data.message, "success")
       showAddModal.value = false
+      formUser.value = { username: '', password: '', is_sudo: false }
+      fetchUsersAndGroups()
+    } else throw new Error(data.error || data)
+  } catch (e) {
+    showToast("Error", e.message, "error")
+  } finally {
+    isSubmittingUser.value = false
+  }
+}
+
+// ── CHANGE PASSWORD ──
+const showPassModal = ref(false)
+const formPass = ref({ username: '', password: '' })
+
+const openPassModal = (username) => {
+  formPass.value = { username, password: '' }
+  showPassModal.value = true
+}
+
+const handleChangePassword = async () => {
+  if (!formPass.value.password) return showToast("Warning", "Password required", "warning")
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/users/${formPass.value.username}/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: formPass.value.password })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      showToast("Success", data.message, "success")
+      showPassModal.value = false
+    } else throw new Error(data.error || data)
+  } catch (e) {
+    showToast("Error", e.message, "error")
+  }
+}
+
+// ── MANAGE SECONDARY GROUPS ──
+const showGroupModal = ref(false)
+const formGroup = ref({ username: '', selected: [] })
+
+const openGroupModal = (user) => {
+  formGroup.value.username = user.username
+  formGroup.value.selected = user.groups.filter(g => g !== user.username)
+  showGroupModal.value = true
+}
+
+const toggleGroupSelection = (groupName) => {
+  const idx = formGroup.value.selected.indexOf(groupName)
+  if (idx > -1) formGroup.value.selected.splice(idx, 1)
+  else formGroup.value.selected.push(groupName)
+}
+
+const handleUpdateGroups = async () => {
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/users/${formGroup.value.username}/groups`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groups: formGroup.value.selected })
+    })
+    const data = await res.json()
+    if (res.ok) {
+      showToast("Success", data.message, "success")
+      showGroupModal.value = false
       fetchUsersAndGroups()
     } else throw new Error(data.error || data)
   } catch (e) {
     showToast("Error", e.message, "error")
   }
+}
+
+// ── DELETE USER ──
+const handleDeleteUser = (username) => {
+  const willDeleteHome = confirm(`Hapus home directory untuk user ${username} juga? (Cancel = Keep home dir, OK = Delete home dir)`)
+  const url = `${getActiveServerUrl()}/api/users/${username}?remove_home=${willDeleteHome}`
+  
+  showConfirm("Hapus User", `Yakin ingin menghapus user Linux: ${username}?`, async () => {
+    try {
+      const res = await apiFetch(url, { method: 'DELETE' })
+      const data = await res.json()
+      if (res.ok) {
+        showToast("Success", data.message, "success")
+        fetchUsersAndGroups()
+      } else throw new Error(data.error || data)
+    } catch(e) {
+      showToast("Error", e.message, "error")
+    }
+  })
 }
 
 // ── SSH KEYS ──
@@ -136,139 +257,74 @@ const deleteSshKey = async (key) => {
   })
 }
 
-// ── CHANGE PASSWORD ──
-const openPassModal = (username) => {
-  formPass.value = { username, password: '' }
-  showPassModal.value = true
-}
+// ── UTILS ──
+const isSystemUser = (uid) => uid < 1000 && uid !== 0
 
-const handleChangePassword = async () => {
-  if (!formPass.value.password) return showToast("Warning", "Password required", "warning")
-  
-  try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/users/${formPass.value.username}/password`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: formPass.value.password })
-    })
-    const data = await res.json()
-    if (res.ok) {
-      showToast("Success", data.message, "success")
-      showPassModal.value = false
-    } else throw new Error(data.error || data)
-  } catch (e) {
-    showToast("Error", e.message, "error")
-  }
-}
+const displayUsers = computed(() => {
+  return users.value.filter(u => !isSystemUser(u.uid))
+})
 
-// ── MANAGE GROUPS ──
-const openGroupModal = (user) => {
-  formGroup.value = { 
-    username: user.username, 
-    selected: [...user.groups] 
-  }
-  showGroupModal.value = true
-}
+const displayGroups = computed(() => {
+  // Hide internal linux groups by default to keep it clean, showing >=1000 + root
+  return groups.value.filter(g => g.gid >= 1000 || g.gid === 0 || g.name === 'wheel' || g.name === 'sudo' || g.name === 'docker')
+})
 
-const toggleGroupSelection = (groupName) => {
-  const idx = formGroup.value.selected.indexOf(groupName)
-  if (idx > -1) formGroup.value.selected.splice(idx, 1)
-  else formGroup.value.selected.push(groupName)
-}
-
-const handleUpdateGroups = async () => {
-  try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/users/${formGroup.value.username}/groups`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ groups: formGroup.value.selected })
-    })
-    const data = await res.json()
-    if (res.ok) {
-      showToast("Success", data.message, "success")
-      showGroupModal.value = false
-      fetchUsersAndGroups()
-    } else throw new Error(data.error || data)
-  } catch (e) {
-    showToast("Error", e.message, "error")
-  }
-}
-
-// ── DELETE USER ──
-const handleDeleteUser = (username) => {
-  // Pakai default native confirm agar bisa dapat input checkbox untuk delete home dir
-  // Karena global Toast confirm kita saat ini tidak support custom checkbox
-  const removeHome = window.confirm(`Apakah Anda yakin ingin menghapus user '${username}'?\n\nTekan OK untuk menghapus user.\n(Home directory akan ikut dihapus jika klik OK, Cancel untuk batal)`)
-  
-  if (!removeHome) return // Batal
-  
-  // Asumsi jika OK, kita juga hapus home. Jika butuh pisah, user bisa pakai CLI.
-  // Untuk simplicity, kita set remove_home = true jika OK ditekan.
-  executeDelete(username, true)
-}
-
-const executeDelete = async (username, removeHome) => {
-  try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/users/${username}?remove_home=${removeHome}`, {
-      method: 'DELETE'
-    })
-    const data = await res.json()
-    if (res.ok) {
-      showToast("Success", data.message, "success")
-      fetchUsersAndGroups()
-    } else throw new Error(data.error || data)
-  } catch (e) {
-    showToast("Error", e.message, "error")
-  }
-}
-
-onMounted(fetchUsersAndGroups)
+onMounted(() => {
+  fetchUsersAndGroups()
+})
 </script>
 
 <template>
-  <div class="space-y-6">
-    <section class="card">
-      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
-        <div class="flex items-center gap-3">
-          <h2 class="card-title mb-0"><Users class="w-5 h-5 text-brand-500" /> Users &amp; Groups</h2>
+  <div class="space-y-4">
+    <!-- Tabs Header -->
+    <div class="flex items-center gap-2 border-b" :class="isDark ? 'border-slate-800' : 'border-slate-200'">
+      <button @click="activeTab = 'users'" class="px-4 py-2 text-sm font-semibold transition-colors border-b-2"
+        :class="activeTab === 'users' ? 'border-brand-500 text-brand-500' : 'border-transparent text-slate-500 hover:text-slate-700'">
+        <div class="flex items-center gap-2"><Users class="w-4 h-4"/> Linux Users</div>
+      </button>
+      <button @click="activeTab = 'groups'" class="px-4 py-2 text-sm font-semibold transition-colors border-b-2"
+        :class="activeTab === 'groups' ? 'border-brand-500 text-brand-500' : 'border-transparent text-slate-500 hover:text-slate-700'">
+        <div class="flex items-center gap-2"><UsersRound class="w-4 h-4"/> User Groups</div>
+      </button>
+    </div>
+
+    <!-- ── TAB 1: USERS ── -->
+    <section v-if="activeTab === 'users'" class="card">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="card-title mb-0"><Users class="w-5 h-5 text-brand-500" /> OS Users Management</h2>
+          <p class="text-xs text-slate-500 mt-1">Manage system users (UID &ge; 1000 and root). System users are hidden.</p>
         </div>
-        <div class="flex items-center gap-4">
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" v-model="showSystemUsers" class="rounded text-brand-600 focus:ring-brand-500 w-4 h-4" />
-            <span class="text-sm font-medium text-slate-600">Show System Users</span>
-          </label>
-          <button @click="formUser = {username: '', password: ''}; showAddModal = true" class="btn-primary whitespace-nowrap">
-            <UserPlus class="w-4 h-4" /> Add User
-          </button>
-        </div>
+        <button @click="showAddModal = true" class="btn-primary whitespace-nowrap">
+          <UserPlus class="w-4 h-4" /> Add User
+        </button>
       </div>
 
-      <div v-if="isLoading" class="flex justify-center p-12">
-        <Loader2 class="w-8 h-8 animate-spin text-brand-500" />
-      </div>
-
+      <div v-if="isLoading" class="p-8 flex justify-center"><Loader2 class="w-6 h-6 animate-spin text-brand-500" /></div>
+      
       <div v-else class="overflow-x-auto">
-        <table class="w-full relative">
-          <thead class="bg-slate-50 border-y border-slate-200">
+        <table class="w-full">
+          <thead class="border-b" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
             <tr>
-              <th class="table-th">User</th>
+              <th class="table-th">User / UID</th>
               <th class="table-th">Groups</th>
-              <th class="table-th">Home &amp; Shell</th>
-              <th class="table-th text-right">Actions</th>
+              <th class="table-th">Home & Shell</th>
+              <th class="table-th text-right">Action</th>
             </tr>
           </thead>
-          <tbody>
-            <tr v-for="user in filteredUsers" :key="user.username" class="hover:bg-slate-50">
+          <tbody class="divide-y" :class="isDark ? 'divide-slate-800' : 'divide-slate-100'">
+            <tr v-for="user in displayUsers" :key="user.uid" class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
               <td class="table-td">
-                <div class="flex items-center gap-2">
-                  <span class="font-bold text-slate-800">{{ user.username }}</span>
-                  <span v-if="user.is_system" class="px-1.5 py-0.5 bg-slate-200 text-slate-500 text-[10px] font-bold rounded">SYS</span>
+                <div class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-200' : 'text-slate-800'">
+                  {{ user.username }}
+                  <span v-if="user.uid === 0" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">ROOT</span>
+                  <span v-else-if="user.groups.includes('wheel') || user.groups.includes('sudo')" class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">SUDO</span>
                 </div>
-                <div class="text-[10px] text-slate-500 font-mono mt-0.5">UID: {{ user.uid }} | GID: {{ user.gid }}</div>
+                <div class="text-xs text-slate-500 mt-0.5">UID: {{ user.uid }}</div>
               </td>
               <td class="table-td">
                 <div class="flex flex-wrap gap-1">
-                  <span v-for="g in user.groups" :key="g" class="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded text-[10px] font-mono">
+                  <span v-for="g in user.groups" :key="g" class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px] dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
                     {{ g }}
                   </span>
                 </div>
@@ -282,8 +338,63 @@ onMounted(fetchUsersAndGroups)
                   <button @click="openSshModal(user.username)" class="p-1.5 rounded bg-emerald-100 text-emerald-600 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50" title="Manage SSH Keys"><Key class="w-3.5 h-3.5" /></button>
                   <button @click="openPassModal(user.username)" class="btn-icon-amber" title="Change Password"><Lock class="w-3.5 h-3.5" /></button>
                   <button @click="openGroupModal(user)" class="btn-icon-blue" title="Manage Groups"><Shield class="w-3.5 h-3.5" /></button>
-                  <button @click="handleDeleteUser(user.username)" class="btn-icon-red" title="Delete User"><Trash2 class="w-3.5 h-3.5" /></button>
+                  <button @click="handleDeleteUser(user.username)" class="btn-icon-red" title="Delete User" :disabled="user.uid === 0"><Trash2 class="w-3.5 h-3.5" /></button>
                 </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── TAB 2: GROUPS ── -->
+    <section v-if="activeTab === 'groups'" class="card">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 class="card-title mb-0"><UsersRound class="w-5 h-5 text-brand-500" /> OS Groups Management</h2>
+          <p class="text-xs text-slate-500 mt-1">Manage user groups (GID &ge; 1000). System groups are hidden by default.</p>
+        </div>
+        <div class="flex gap-2">
+          <input v-model="newGroupName" type="text" placeholder="Create new group..." class="input-field text-sm" :disabled="isCreatingGroup" @keyup.enter="handleCreateGroup">
+          <button @click="handleCreateGroup" class="btn-primary whitespace-nowrap" :disabled="isCreatingGroup">
+            <Loader2 v-if="isCreatingGroup" class="w-4 h-4 animate-spin" />
+            <span v-else>Add Group</span>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="isLoading" class="p-8 flex justify-center"><Loader2 class="w-6 h-6 animate-spin text-brand-500" /></div>
+
+      <div v-else class="overflow-x-auto">
+        <table class="w-full">
+          <thead class="border-b" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
+            <tr>
+              <th class="table-th">Group Name</th>
+              <th class="table-th w-24 text-center">GID</th>
+              <th class="table-th w-1/2">Members</th>
+              <th class="table-th text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y" :class="isDark ? 'divide-slate-800' : 'divide-slate-100'">
+            <tr v-for="group in displayGroups" :key="group.gid" class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+              <td class="table-td font-bold" :class="isDark ? 'text-slate-200' : 'text-slate-800'">
+                {{ group.name }}
+              </td>
+              <td class="table-td font-mono text-xs text-center text-slate-500">
+                {{ group.gid }}
+              </td>
+              <td class="table-td">
+                <div class="flex flex-wrap gap-1">
+                  <span v-if="group.members.length === 0" class="text-xs italic text-slate-400">No members</span>
+                  <span v-else v-for="m in group.members" :key="m" class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 text-[10px] dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
+                    {{ m }}
+                  </span>
+                </div>
+              </td>
+              <td class="table-td text-right">
+                <button @click="handleDeleteGroup(group.name)" class="btn-icon-red" title="Delete Group" :disabled="group.gid === 0 || group.name === 'wheel' || group.name === 'sudo'">
+                  <Trash2 class="w-3.5 h-3.5" />
+                </button>
               </td>
             </tr>
           </tbody>
@@ -302,16 +413,22 @@ onMounted(fetchUsersAndGroups)
           <div class="p-5 space-y-4">
             <div>
               <label class="block text-xs font-semibold mb-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Username</label>
-              <input v-model="formUser.username" type="text" class="input-field" placeholder="e.g. johndoe">
+              <input v-model="formUser.username" type="text" class="input-field w-full" placeholder="e.g. john" />
             </div>
             <div>
               <label class="block text-xs font-semibold mb-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">Password</label>
-              <input v-model="formUser.password" type="password" class="input-field" placeholder="Leave empty for no password">
+              <input v-model="formUser.password" type="password" class="input-field w-full" placeholder="Leave empty for no password" />
             </div>
-            <div class="pt-2 flex justify-end gap-2">
-              <button @click="showAddModal = false" class="btn-outline">Cancel</button>
-              <button @click="handleAddUser" class="btn-primary">Create User</button>
-            </div>
+            <label class="flex items-center gap-2 cursor-pointer mt-2">
+              <input v-model="formUser.is_sudo" type="checkbox" class="rounded text-brand-600 focus:ring-brand-500" :class="isDark ? 'bg-slate-900 border-slate-700' : ''" />
+              <span class="text-sm font-medium" :class="isDark ? 'text-slate-300' : 'text-slate-700'">Grant sudo/wheel privileges</span>
+            </label>
+          </div>
+          <div class="p-4 border-t flex justify-end gap-2" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
+            <button @click="showAddModal = false" class="btn-outline">Cancel</button>
+            <button @click="handleCreateUser" class="btn-primary" :disabled="isSubmittingUser">
+              <Loader2 v-if="isSubmittingUser" class="w-4 h-4 animate-spin" /> Create
+            </button>
           </div>
         </div>
       </div>
@@ -320,21 +437,18 @@ onMounted(fetchUsersAndGroups)
     <!-- Modal: Change Password -->
     <Teleport to="body">
       <div v-if="showPassModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
-        <div class="rounded-xl shadow-xl w-full max-w-md overflow-hidden" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+        <div class="rounded-xl shadow-xl w-full max-w-sm overflow-hidden" :class="isDark ? 'bg-slate-800' : 'bg-white'">
           <div class="p-4 border-b flex justify-between items-center" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
-            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><Key class="w-4 h-4 text-amber-500"/> Change Password</h3>
+            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><Lock class="w-4 h-4 text-amber-500"/> Change Password</h3>
             <button @click="showPassModal = false" class="transition-colors" :class="isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'"><X class="w-4 h-4"/></button>
           </div>
-          <div class="p-5 space-y-4">
-            <p class="text-sm" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Set new password for <strong :class="isDark ? 'text-slate-100' : 'text-slate-800'">{{ formPass.username }}</strong>.</p>
-            <div>
-              <label class="block text-xs font-semibold mb-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">New Password</label>
-              <input v-model="formPass.password" type="password" class="input-field" placeholder="Enter new password" @keydown.enter="handleChangePassword">
-            </div>
-            <div class="pt-2 flex justify-end gap-2">
-              <button @click="showPassModal = false" class="btn-outline">Cancel</button>
-              <button @click="handleChangePassword" class="btn-warning !text-amber-900">Update Password</button>
-            </div>
+          <div class="p-5">
+            <p class="text-sm mb-4" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Enter new password for <strong :class="isDark ? 'text-slate-100' : 'text-slate-800'">{{ formPass.username }}</strong>:</p>
+            <input v-model="formPass.password" type="password" class="input-field w-full" placeholder="New password" @keyup.enter="handleChangePassword" />
+          </div>
+          <div class="p-4 border-t flex justify-end gap-2" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
+            <button @click="showPassModal = false" class="btn-outline">Cancel</button>
+            <button @click="handleChangePassword" class="btn-primary bg-amber-500 hover:bg-amber-600 border-none text-white">Save</button>
           </div>
         </div>
       </div>
@@ -350,7 +464,6 @@ onMounted(fetchUsersAndGroups)
           </div>
           <div class="p-5 overflow-y-auto">
             <p class="text-sm mb-4" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Select secondary groups for <strong :class="isDark ? 'text-slate-100' : 'text-slate-800'">{{ formGroup.username }}</strong>.</p>
-            
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <label v-for="g in groups" :key="g.name" class="flex items-center gap-2 p-2 border rounded cursor-pointer transition-colors" :class="[isDark ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-50', formGroup.selected.includes(g.name) ? (isDark ? 'bg-blue-900/20 border-blue-800' : 'bg-blue-50 border-blue-200') : '']">
                 <input type="checkbox" :checked="formGroup.selected.includes(g.name)" @change="toggleGroupSelection(g.name)" class="rounded focus:ring-brand-500" :class="isDark ? 'bg-slate-800 border-slate-600' : 'text-brand-600'">

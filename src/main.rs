@@ -105,6 +105,8 @@ async fn main() {
         .route("/api/users/{username}", delete(routes::users_mgmt::delete_user_handler))
         .route("/api/users/{username}/ssh", get(routes::users_mgmt::get_ssh_keys_handler))
         .route("/api/groups", get(routes::users_mgmt::get_groups_handler))
+        .route("/api/groups", post(routes::users_mgmt::create_group_handler))
+        .route("/api/groups/{groupname}", delete(routes::users_mgmt::delete_group_handler))
         .route("/api/services", get(routes::services_mgmt::list_services_handler))
         .route("/api/services/action", post(routes::services_mgmt::service_action_handler))
         .route("/api/syslogs", get(routes::syslogs::get_syslogs_handler))
