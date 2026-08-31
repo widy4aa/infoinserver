@@ -10,7 +10,10 @@ use std::process::Command;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
-use crate::services::file_manager::{list_directory, resolve_and_validate_path, FileInfo};
+use crate::services::file_manager::{
+    list_directory, resolve_and_validate_path, resolve_path_safe,
+    check_write_permission, get_removable_mounts, FileInfo
+};
 
 #[derive(Deserialize)]
 pub struct FileQuery {
@@ -23,13 +26,28 @@ pub struct FetchUrlRequest {
     pub path: String,
 }
 
+/// Helper: dapatkan home_root dari env
+fn get_home_root() -> String {
+    env::var("FILE_ROOT").unwrap_or_else(|_| "/".to_string())
+}
+
+/// Endpoint untuk membaca konfigurasi file manager (dibutuhkan frontend untuk tentukan read-only)
+pub async fn get_files_config_handler() -> Json<serde_json::Value> {
+    let home_root = get_home_root();
+    Json(serde_json::json!({
+        "home_root": home_root,
+        "system_root": "/"
+    }))
+}
+
 pub async fn list_files_handler(Query(query): Query<FileQuery>) -> Result<Json<Vec<FileInfo>>, (StatusCode, String)> {
-    let base_root = env::var("FILE_ROOT").map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "FILE_ROOT not configured".to_string()))?;
+    let home_root = get_home_root();
     let req_path = query.path.unwrap_or_else(|| "/".to_string());
 
-    match resolve_and_validate_path(&base_root, &req_path) {
+    // Izinkan akses ke seluruh filesystem (Opsi A)
+    match resolve_path_safe(&req_path) {
         Ok(valid_path) => {
-            match list_directory(&valid_path) {
+            match list_directory(&valid_path, &home_root) {
                 Ok(files) => Ok(Json(files)),
                 Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e)),
             }
@@ -39,14 +57,14 @@ pub async fn list_files_handler(Query(query): Query<FileQuery>) -> Result<Json<V
 }
 
 pub async fn download_file_handler(Query(query): Query<FileQuery>) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let base_root = env::var("FILE_ROOT").map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "FILE_ROOT not configured".to_string()))?;
     let req_path = query.path.unwrap_or_default();
 
     if req_path.is_empty() {
         return Err((StatusCode::BAD_REQUEST, "Path parameter is required".to_string()));
     }
 
-    let valid_path = resolve_and_validate_path(&base_root, &req_path)
+    // Download adalah read-only, boleh dari mana saja
+    let valid_path = resolve_path_safe(&req_path)
         .map_err(|e| (StatusCode::FORBIDDEN, e))?;
 
     if valid_path.is_dir() {
@@ -76,14 +94,17 @@ pub async fn upload_file_handler(
     Query(query): Query<FileQuery>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let base_root = env::var("FILE_ROOT").map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "FILE_ROOT not configured".to_string()))?;
-    
-    // Path tujuan upload (folder tujuan)
+    let home_root = get_home_root();
     let req_path = query.path.unwrap_or_else(|| "/".to_string());
     
-    // Validasi folder tujuan
-    let valid_dir = resolve_and_validate_path(&base_root, &req_path)
+    // Upload wajib cek write permission
+    let valid_dir = resolve_path_safe(&req_path)
         .map_err(|e| (StatusCode::FORBIDDEN, e))?;
+
+    let removable_mounts = get_removable_mounts();
+    if !check_write_permission(&valid_dir, &home_root, &removable_mounts) {
+        return Err((StatusCode::FORBIDDEN, "Path is read-only (outside home and removable drives)".to_string()));
+    }
 
     if !valid_dir.is_dir() {
         return Err((StatusCode::BAD_REQUEST, "Upload target path must be a directory".to_string()));
@@ -128,10 +149,15 @@ pub async fn upload_file_handler(
 }
 
 pub async fn fetch_url_handler(Json(payload): Json<FetchUrlRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let base_root = env::var("FILE_ROOT").map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "FILE_ROOT not configured".to_string()))?;
+    let home_root = get_home_root();
     
-    let valid_dir = resolve_and_validate_path(&base_root, &payload.path)
+    let valid_dir = resolve_path_safe(&payload.path)
         .map_err(|e| (StatusCode::FORBIDDEN, e))?;
+
+    let removable_mounts = get_removable_mounts();
+    if !check_write_permission(&valid_dir, &home_root, &removable_mounts) {
+        return Err((StatusCode::FORBIDDEN, "Path is read-only".to_string()));
+    }
 
     if !valid_dir.is_dir() {
         return Err((StatusCode::BAD_REQUEST, "Target path must be a directory".to_string()));
@@ -168,30 +194,48 @@ pub struct FileTextRequest {
     pub content: Option<String>, // Jika ada isinya, berarti WRITE. Jika kosong, berarti READ.
 }
 pub async fn file_action_handler(Json(payload): Json<FileActionRequest>) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let base_root = env::var("FILE_ROOT").unwrap_or_default();
+    let home_root = get_home_root();
+    let removable_mounts = get_removable_mounts();
     
-    // Resolve target path (selalu diperlukan)
-    let valid_target = resolve_and_validate_path(&base_root, &payload.target)
+    // Resolve target path
+    let valid_target = resolve_path_safe(&payload.target)
         .map_err(|e| (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))))?;
+
+    // READ actions (delete tidak butuh check di target karena delete = modifikasi)
+    // Untuk aksi modifikasi: wajib check write permission pada TARGET
+    let write_actions = ["rename", "move", "copy", "delete", "compress", "extract", "chmod"];
+    if write_actions.contains(&payload.action.as_str()) {
+        // Untuk copy: source boleh read-only, tapi destination wajib writable
+        if payload.action == "copy" {
+            // Source tidak wajib writable, destination wajib writable
+        } else {
+            if !check_write_permission(&valid_target, &home_root, &removable_mounts) {
+                return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Path is read-only (outside home and removable drives)"}))));
+            }
+        }
+    }
 
     // Beberapa action butuh destination
     let valid_dest = if let Some(dest) = &payload.destination {
         if payload.action == "rename" {
-            // Rename hanya merubah nama file di directory yang sama
             let parent = valid_target.parent().unwrap();
             let new_path = parent.join(dest);
-            // Cegah path traversal pada nama baru
             if dest.contains('/') || dest.contains('\\') || dest.contains("..") {
                 return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Invalid rename destination"}))));
             }
             Some(new_path)
         } else if payload.action == "chmod" {
-            // Destination dipakai untuk string permissions, bukan path
             None
         } else {
-            // Move, Copy, Compress, Extract butuh absolute path resolve
-            let res = resolve_and_validate_path(&base_root, dest)
+            // Move, Copy, Compress, Extract — pakai absolute path
+            let res = resolve_path_safe(dest)
                 .map_err(|e| (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))))?;
+            // Untuk copy/move: destination wajib writable
+            if payload.action == "copy" || payload.action == "move" {
+                if !check_write_permission(&res, &home_root, &removable_mounts) {
+                    return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Destination is read-only"}))));
+                }
+            }
             Some(res)
         }
     } else {
@@ -262,9 +306,9 @@ pub async fn file_action_handler(Json(payload): Json<FileActionRequest>) -> Resu
 }
 
 pub async fn text_file_handler(Json(payload): Json<FileTextRequest>) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let base_root = env::var("FILE_ROOT").unwrap_or_default();
+    let home_root = get_home_root();
     
-    let valid_path = resolve_and_validate_path(&base_root, &payload.path)
+    let valid_path = resolve_path_safe(&payload.path)
         .map_err(|e| (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))))?;
 
     if valid_path.is_dir() {
@@ -272,7 +316,11 @@ pub async fn text_file_handler(Json(payload): Json<FileTextRequest>) -> Result<J
     }
 
     if let Some(content) = payload.content {
-        // WRITE Mode
+        // WRITE Mode — cek permission dulu
+        let removable_mounts = get_removable_mounts();
+        if !check_write_permission(&valid_path, &home_root, &removable_mounts) {
+            return Err((StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "File is read-only (outside home and removable drives)"}))));
+        }
         tokio::fs::write(&valid_path, content).await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to write file: {}", e)}))))?;
             
@@ -281,7 +329,7 @@ pub async fn text_file_handler(Json(payload): Json<FileTextRequest>) -> Result<J
             "message": "File saved successfully"
         })))
     } else {
-        // READ Mode
+        // READ Mode — boleh dari mana saja
         let text = tokio::fs::read_to_string(&valid_path).await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("Failed to read file (might be binary): {}", e)}))))?;
             
@@ -302,14 +350,14 @@ pub struct DetailedFileInfo {
 }
 
 pub async fn file_info_handler(Query(query): Query<FileQuery>) -> Result<Json<DetailedFileInfo>, (StatusCode, Json<serde_json::Value>)> {
-    let base_root = env::var("FILE_ROOT").unwrap_or_default();
     let req_path = query.path.unwrap_or_default();
 
     if req_path.is_empty() {
         return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Path parameter is required"}))));
     }
 
-    let valid_path = resolve_and_validate_path(&base_root, &req_path)
+    // file_info adalah read-only, boleh dari mana saja
+    let valid_path = resolve_path_safe(&req_path)
         .map_err(|e| (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))))?;
 
     let metadata = tokio::fs::metadata(&valid_path).await
