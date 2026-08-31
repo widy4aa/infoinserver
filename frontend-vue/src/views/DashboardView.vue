@@ -4,6 +4,7 @@ import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useThemeStore } from '../stores/themeStore'
 import { Cpu, Loader2, Activity, Clock } from 'lucide-vue-next'
+import { getDistroIcon } from '../utils/distro.js'
 
 import {
   Chart as ChartJS,
@@ -30,12 +31,13 @@ ChartJS.register(
 )
 
 const { apiFetch } = useApi()
-const { getActiveServerUrl, getToken, activeServerId } = useServerStore()
+const { getActiveServerUrl, getToken, activeServerId, setServerOsName } = useServerStore()
 const { isDark } = useThemeStore()
 
 const sysInfo = ref(null)
 const error = ref(null)
 let ws = null
+let osNameSaved = false // Flag agar tidak berulang kali simpan
 
 // History Data
 const historyData = ref([])
@@ -77,6 +79,11 @@ const connectWebSocket = () => {
       if (data.type === 'metrics_update') {
         sysInfo.value = data.system
         error.value = null
+        // Simpan os_name ke localStorage sekali saja (Opsi C - Hybrid)
+        if (!osNameSaved && data.system?.os_name) {
+          setServerOsName(activeServerId.value, data.system.os_name)
+          osNameSaved = true
+        }
       }
     } catch (e) {
       console.error('Failed to parse WS data', e)
@@ -330,6 +337,8 @@ onUnmounted(() => {
             <div class="p-4 bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center dark:bg-slate-800/50 dark:border-slate-700">
               <div class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Hostname & OS</div>
               <div class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <!-- Distro Icon -->
+                <img v-if="getDistroIcon(sysInfo.os_name)" :src="getDistroIcon(sysInfo.os_name)" :alt="sysInfo.os_name" class="w-5 h-5 object-contain shrink-0" />
                 {{ sysInfo.hostname }}
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
                   <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -345,14 +354,18 @@ onUnmounted(() => {
             </div>
             
             <div class="p-4 bg-brand-50 rounded-lg border border-brand-100 md:col-span-2 dark:bg-blue-900/20 dark:border-blue-800">
-              <div class="flex justify-between items-center mb-2">
-                <div class="text-sm font-medium text-brand-600 dark:text-brand-400">CPU Usage ({{ sysInfo.cpu_cores }} Cores)</div>
-                <div class="text-xs text-brand-600 dark:text-brand-400 font-mono truncate max-w-[150px]" :title="sysInfo.cpu_model">{{ sysInfo.cpu_model }}</div>
-              </div>
-              <div class="flex items-center gap-3">
-                <div class="text-2xl font-bold text-brand-700 dark:text-brand-300 w-20">{{ sysInfo.global_cpu_usage?.toFixed(1) }}%</div>
-                <div class="flex-1 bg-brand-200 rounded-full h-2.5 overflow-hidden dark:bg-brand-800">
-                  <div class="bg-brand-500 h-2.5 rounded-full transition-all duration-300" :style="`width: ${Math.min(Math.max(sysInfo.global_cpu_usage||0, 0), 100)}%`"></div>
+              <div class="flex flex-col gap-2">
+                <div>
+                  <div class="text-sm font-medium text-brand-600 dark:text-brand-400">CPU Usage ({{ sysInfo.cpu_cores }} Cores)</div>
+                  <div class="text-xs text-brand-500/70 dark:text-brand-400/60 font-mono truncate mt-0.5 w-full" :title="sysInfo.cpu_model">
+                    {{ sysInfo.cpu_model }}
+                  </div>
+                </div>
+                <div class="flex items-center gap-3">
+                  <div class="text-2xl font-bold text-brand-700 dark:text-brand-300 w-20">{{ sysInfo.global_cpu_usage?.toFixed(1) }}%</div>
+                  <div class="flex-1 bg-brand-200 rounded-full h-2.5 overflow-hidden dark:bg-brand-800">
+                    <div class="bg-brand-500 h-2.5 rounded-full transition-all duration-300" :style="`width: ${Math.min(Math.max(sysInfo.global_cpu_usage||0, 0), 100)}%`"></div>
+                  </div>
                 </div>
               </div>
             </div>

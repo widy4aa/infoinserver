@@ -4,7 +4,8 @@ import { useServerStore } from '../stores/serverStore'
 import { onMounted, onUnmounted, ref } from 'vue'
 import NativeTerminal from '../components/NativeTerminal.vue'
 import LoginModal from '../components/LoginModal.vue'
-import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle, Users, PowerSquare, ScrollText, Clock, Download } from 'lucide-vue-next'
+import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle, Users, PowerSquare, ScrollText, Clock, Download, Server } from 'lucide-vue-next'
+import { getDistroIcon } from '../utils/distro.js'
 
 const route = useRoute()
 const { setActiveServer, servers, isAuthenticated, getUsername, clearToken } = useServerStore()
@@ -94,6 +95,11 @@ onUnmounted(() => {
           <RouterLink to="/" @click="handleGoHome" class="p-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:hover:bg-slate-600 dark:text-slate-300">
             <ArrowLeft class="w-5 h-5" />
           </RouterLink>
+          <!-- Distro Icon di sebelah tombol back -->
+          <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700">
+            <img v-if="getDistroIcon(currentServer.os_name)" :src="getDistroIcon(currentServer.os_name)" :alt="currentServer.os_name" class="w-6 h-6 object-contain" />
+            <Server v-else class="w-5 h-5 text-slate-400" />
+          </div>
           <div>
             <div class="flex items-center gap-2">
               <h2 class="font-bold text-lg text-slate-800 dark:text-slate-100 leading-tight">{{ currentServer.name }}</h2>
@@ -123,7 +129,9 @@ onUnmounted(() => {
           </div>
 
           <!-- Terminal Button -->
-          <button @click="showTerminal = true" class="btn-primary w-9 h-9 p-0 flex items-center justify-center rounded-lg" title="Root Terminal">
+          <button @click="showTerminal = true"
+            class="w-9 h-9 rounded-lg bg-brand-600 hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-400 text-white flex items-center justify-center transition-colors shadow-sm shrink-0"
+            title="Root Terminal">
             <Terminal class="w-4 h-4" />
           </button>
         </div>

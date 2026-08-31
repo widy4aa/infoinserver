@@ -2,6 +2,7 @@
 import { RouterLink } from 'vue-router'
 import { useServerStore } from '../stores/serverStore'
 import { Server, Plus, ShieldCheck, Box, FolderTree, Settings, Cloud, Activity } from 'lucide-vue-next'
+import { getDistroIcon, getDistroColorClass } from '../utils/distro.js'
 
 const { servers } = useServerStore()
 </script>
@@ -27,14 +28,18 @@ const { servers } = useServerStore()
         
         <!-- Header Card (Clickable to enter server) -->
         <RouterLink :to="`/server/${s.id}/dashboard`" class="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-start gap-4 hover:bg-brand-50 dark:hover:bg-slate-700 transition-colors flex-1 cursor-pointer">
-          <div class="w-12 h-12 rounded-xl bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 dark:text-brand-400 shrink-0 shadow-sm group-hover:bg-brand-600 group-hover:text-white dark:group-hover:bg-brand-500 transition-colors">
-            <Server class="w-6 h-6" />
+          <!-- Distro Icon (jika ada os_name) atau fallback <Server /> -->
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm group-hover:opacity-90 transition-opacity"
+               :class="s.os_name ? (getDistroColorClass(s.os_name) || 'bg-slate-100 dark:bg-slate-700') : 'bg-brand-100 dark:bg-brand-900/30'">
+            <img v-if="getDistroIcon(s.os_name)" :src="getDistroIcon(s.os_name)" :alt="s.os_name" class="w-7 h-7 object-contain" />
+            <Server v-else class="w-6 h-6 text-brand-600 dark:text-brand-400 group-hover:text-brand-700" />
           </div>
           <div class="flex-1 min-w-0">
             <h3 class="font-bold text-slate-800 dark:text-slate-100 text-lg leading-tight truncate" :title="s.name">
               {{ s.name }}
             </h3>
             <div class="text-xs text-slate-500 dark:text-slate-400 font-mono mt-1 truncate">{{ s.url }}</div>
+            <div v-if="s.os_name" class="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 truncate">{{ s.os_name }}</div>
           </div>
         </RouterLink>
 

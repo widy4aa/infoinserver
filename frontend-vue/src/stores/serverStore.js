@@ -67,6 +67,15 @@ export const useServerStore = () => {
     if (server) server.name = newName
   }
 
+  // Simpan os_name yang terdeteksi dari backend ke localStorage
+  const setServerOsName = (id, osName) => {
+    if (!osName) return
+    const server = servers.value.find(s => s.id === id)
+    if (server && server.os_name !== osName) {
+      server.os_name = osName
+    }
+  }
+
   return {
     servers,
     activeServerId,
@@ -81,5 +90,6 @@ export const useServerStore = () => {
     removeServer,
     setActiveServer,
     updateServerName,
+    setServerOsName,
   }
 }
