@@ -7,7 +7,7 @@ import { useThemeStore } from '../stores/themeStore'
 import {
   Cloud, CheckCircle2, XCircle, Loader2, Plus, Trash2,
   RefreshCw, Terminal, KeyRound, ExternalLink, ShieldCheck,
-  AlertTriangle, DownloadCloud, ChevronRight, Copy, Play, Square, Globe
+  AlertTriangle, DownloadCloud, ChevronRight, Copy, Play, Square, Globe, Activity
 } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
@@ -53,6 +53,26 @@ const isRestarting = ref(false)
 const isStarting = ref(false)
 const isStopping = ref(false)
 const isInstalling = ref(false)
+
+// ── Health Diagnostics ───────────────────────────────────────
+const healthStatus = ref([])
+const isCheckingHealth = ref(false)
+
+const checkHealth = async () => {
+  isCheckingHealth.value = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/health`)
+    if (res.ok) {
+      healthStatus.value = await res.json()
+    } else {
+      await handleApiError(res)
+    }
+  } catch (e) {
+    showToast('Error', e.message, 'error')
+  } finally {
+    isCheckingHealth.value = false
+  }
+}
 
 // ── Computed helpers ─────────────────────────────────────────
 const isFullySetup = computed(() =>
@@ -400,9 +420,10 @@ const fetchLogs = async () => {
 }
 
 // ── Lifecycle ────────────────────────────────────────────────
-onMounted(() => {
-  fetchStatus()
+onMounted(async () => {
+  await fetchStatus()
   fetchLogs()
+  checkHealth() // Auto check health on load
   logsTimer = setInterval(fetchLogs, 5000)
 })
 
@@ -629,53 +650,115 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <!-- ── Section 3: Ingress Routes (hanya jika config ada) ──── -->
-      <section v-if="status.config_exists" class="card">
-        <div class="flex items-center justify-between gap-4 flex-wrap mb-4">
-          <h2 class="card-title">
-            <ChevronRight class="w-5 h-5 text-brand-500" />
-            Ingress Routes
-            <span v-if="localConfig" class="text-xs font-normal ml-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
-              (Tunnel: <code class="font-mono">{{ status?.tunnel_name || localConfig.tunnel }}</code>)
-            </span>
-          </h2>
-          <button @click="fetchConfig" class="btn-outline text-xs" :disabled="isLoadingConfig">
-            <Loader2 v-if="isLoadingConfig" class="w-3.5 h-3.5 animate-spin" />
-            <RefreshCw v-else class="w-3.5 h-3.5" />
-            Sync
-          </button>
-        </div>
-
-        <!-- Add route form -->
-        <div class="border rounded-lg p-4 mb-5" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
-          <h3 class="text-sm font-semibold mb-3" :class="isDark ? 'text-slate-200' : 'text-slate-700'">Add New Route</h3>
-          <div class="flex flex-col sm:flex-row gap-2">
-            <input
-              v-model="newHostname"
-              type="text"
-              placeholder="Public hostname (e.g. app.widy4aa.my.id)"
-              class="input-field sm:flex-1"
-              :disabled="isAddingRoute"
-            />
-            <input
-              v-model="newService"
-              type="text"
-              placeholder="Local service (e.g. http://127.0.0.1:8080)"
-              class="input-field sm:flex-1"
-              :disabled="isAddingRoute"
-            />
-            <button @click="addRoute" class="btn-primary whitespace-nowrap" :disabled="isAddingRoute">
-              <Loader2 v-if="isAddingRoute" class="w-4 h-4 animate-spin" />
-              <Plus v-else class="w-4 h-4" />
-              {{ isAddingRoute ? 'Adding...' : 'Add Route' }}
+      <!-- ── Section 3 & 4: Split Layout (Ingress & DNS) ──── -->
+      <div v-if="status.config_exists" class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        
+        <!-- ── Section 3: Ingress Routes ──── -->
+        <section class="card">
+          <div class="flex items-center justify-between gap-4 flex-wrap mb-4">
+            <h2 class="card-title">
+              <ChevronRight class="w-5 h-5 text-brand-500" />
+              Ingress Routes
+              <span v-if="localConfig" class="text-xs font-normal ml-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
+                (Tunnel: <code class="font-mono">{{ status?.tunnel_name || localConfig.tunnel }}</code>)
+              </span>
+            </h2>
+            <button @click="fetchConfig" class="btn-outline text-xs" :disabled="isLoadingConfig">
+              <Loader2 v-if="isLoadingConfig" class="w-3.5 h-3.5 animate-spin" />
+              <RefreshCw v-else class="w-3.5 h-3.5" />
+              Sync
             </button>
           </div>
-          <p class="text-[10px] mt-2" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
-            Adding a route will: (1) register DNS CNAME via <code>cloudflared tunnel route dns</code>, (2) update config.yml, (3) restart service.
-          </p>
-        </div>
 
-        <!-- Routes table -->
+          <!-- Add route form -->
+          <div class="border rounded-lg p-4 mb-5" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
+            <h3 class="text-sm font-semibold mb-3" :class="isDark ? 'text-slate-200' : 'text-slate-700'">Add New Route</h3>
+            <div class="flex flex-col xl:flex-row gap-2">
+              <div class="flex flex-col gap-2 flex-1">
+                <input
+                  v-model="newHostname"
+                  type="text"
+                  placeholder="Public hostname (e.g. app.widy4aa.my.id)"
+                  class="input-field w-full"
+                  :disabled="isAddingRoute"
+                />
+                <input
+                  v-model="newService"
+                  type="text"
+                  placeholder="Local service (e.g. http://127.0.0.1:8080)"
+                  class="input-field w-full"
+                  :disabled="isAddingRoute"
+                />
+              </div>
+              <button @click="addRoute" class="btn-primary whitespace-nowrap self-end xl:self-auto xl:h-auto py-2" :disabled="isAddingRoute">
+                <Loader2 v-if="isAddingRoute" class="w-4 h-4 animate-spin" />
+                <Plus v-else class="w-4 h-4" />
+                {{ isAddingRoute ? 'Adding...' : 'Add Route' }}
+              </button>
+            </div>
+            <p class="text-[10px] mt-2" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
+              Adding a route here will only update local <code>config.yml</code>. You must add the CNAME manually in the DNS table.
+            </p>
+          </div>
+
+          <!-- Routes table -->
+          <div v-if="isLoadingConfig" class="flex justify-center py-8">
+            <Loader2 class="w-6 h-6 animate-spin text-brand-500" />
+          </div>
+
+          <div v-else-if="localConfig" class="overflow-x-auto">
+            <table class="w-full">
+              <thead class="border-b-2" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
+                <tr>
+                  <th class="table-th">Public Hostname</th>
+                  <th class="table-th">Local Service</th>
+                  <th class="table-th text-right w-16">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in routes" :key="r.hostname" class="border-b transition-colors" :class="isDark ? 'hover:bg-slate-800/50 border-slate-700' : 'hover:bg-slate-50 border-slate-100'">
+                  <td class="table-td font-semibold" :class="isDark ? 'text-brand-400' : 'text-brand-700'">
+                    <a :href="`https://${r.hostname}`" target="_blank" class="hover:underline flex items-center gap-1">
+                      {{ r.hostname }}
+                      <ExternalLink class="w-3 h-3" :class="isDark ? 'text-slate-500' : 'text-slate-400'" />
+                    </a>
+                  </td>
+                  <td class="table-td font-mono text-xs" :class="isDark ? 'text-slate-300' : 'text-slate-600'">{{ r.service }}</td>
+                  <td class="table-td text-right">
+                    <button
+                      @click="deleteRoute(r.hostname)"
+                      class="p-1.5 rounded"
+                      :class="isDark ? 'text-red-400 hover:text-red-300 hover:bg-red-900/30' : 'text-red-400 hover:text-red-600 hover:bg-red-50'"
+                      title="Remove Route from Config"
+                    >
+                      <Trash2 class="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+                <tr v-if="routes.length === 0">
+                  <td colspan="3" class="text-center p-6 text-sm" :class="isDark ? 'text-slate-500' : 'text-slate-500'">
+                    No ingress routes configured. Add one above.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <!-- Catch-all info -->
+            <div class="mt-2 px-2 text-[10px]" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
+              Fallback: <code>http_status:404</code> (always last)
+            </div>
+          </div>
+        </section>
+
+      <!-- ── Section 4: CNAME DNS Records ────────────────────────── -->
+      <section class="card">
+        <h2 class="card-title">
+          <Globe class="w-5 h-5 text-brand-500" />
+          CNAME DNS Records
+        </h2>
+        <p class="text-[10px] mb-4" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
+          Manage Cloudflare DNS routing for the hostnames defined in your ingress configuration.
+        </p>
+        
         <div v-if="isLoadingConfig" class="flex justify-center py-8">
           <Loader2 class="w-6 h-6 animate-spin text-brand-500" />
         </div>
@@ -684,66 +767,105 @@ onUnmounted(() => {
           <table class="w-full">
             <thead class="border-b-2" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
               <tr>
-                <th class="table-th">Public Hostname</th>
-                <th class="table-th">Local Service</th>
-                <th class="table-th text-center">CNAME DNS</th>
-                <th class="table-th text-right">Action</th>
+                <th class="table-th">Hostname</th>
+                <th class="table-th w-32 text-left">Status</th>
+                <th class="table-th text-right w-24">Action</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="r in routes" :key="r.hostname" class="border-b transition-colors" :class="isDark ? 'hover:bg-slate-800/50 border-slate-700' : 'hover:bg-slate-50 border-slate-100'">
                 <td class="table-td font-semibold" :class="isDark ? 'text-brand-400' : 'text-brand-700'">
-                  <a :href="`https://${r.hostname}`" target="_blank" class="hover:underline flex items-center gap-1">
-                    {{ r.hostname }}
-                    <ExternalLink class="w-3 h-3" :class="isDark ? 'text-slate-500' : 'text-slate-400'" />
-                  </a>
+                  {{ r.hostname }}
                 </td>
-                <td class="table-td font-mono text-xs" :class="isDark ? 'text-slate-300' : 'text-slate-600'">{{ r.service }}</td>
-                <td class="table-td text-center">
-                  <span v-if="r.cname_active" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400">
-                    Active (Green)
+                <td class="table-td text-left whitespace-nowrap">
+                  <span v-if="r.cname_active" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400 border border-green-200 dark:border-green-800">
+                    <CheckCircle2 class="w-3 h-3 inline mr-1" /> Active
                   </span>
-                  <span v-else class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
-                    Pending CNAME (Yellow)
+                  <span v-else class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                    <AlertTriangle class="w-3 h-3 inline mr-1" /> Not Registered
                   </span>
                 </td>
-                <td class="table-td text-right flex items-center justify-end gap-1.5">
+                <td class="table-td text-right">
                   <button
                     v-if="!r.cname_active"
                     @click="registerDns(r.hostname)"
-                    class="p-1 rounded text-xs flex items-center gap-1 bg-brand-50 hover:bg-brand-100 text-brand-600 border border-brand-200 dark:bg-brand-950/40 dark:text-brand-400 dark:border-brand-900"
+                    class="btn-primary py-1 px-2 text-[10px] ml-auto whitespace-nowrap"
                     title="Add CNAME to Cloudflare"
                     :disabled="registeringDnsMap[r.hostname]"
                   >
                     <Loader2 v-if="registeringDnsMap[r.hostname]" class="w-3 h-3 animate-spin" />
-                    <Globe v-else class="w-3 h-3" />
+                    <Plus v-else class="w-3 h-3" />
                     Add CNAME
                   </button>
-                  <button
-                    @click="deleteRoute(r.hostname)"
-                    class="p-1.5 rounded"
-                    :class="isDark ? 'text-red-400 hover:text-red-300 hover:bg-red-900/30' : 'text-red-400 hover:text-red-600 hover:bg-red-50'"
-                    title="Remove Route"
-                  >
-                    <Trash2 class="w-4 h-4" />
-                  </button>
+                  <span v-else class="text-[10px] text-slate-400 italic">Managed</span>
                 </td>
               </tr>
               <tr v-if="routes.length === 0">
-                <td colspan="4" class="text-center p-6 text-sm" :class="isDark ? 'text-slate-500' : 'text-slate-500'">
-                  No ingress routes configured. Add one above.
+                <td colspan="3" class="text-center p-6 text-sm" :class="isDark ? 'text-slate-500' : 'text-slate-500'">
+                  No hostnames found to register.
                 </td>
               </tr>
             </tbody>
           </table>
-          <!-- Catch-all info -->
-          <div class="mt-2 px-2 text-[10px]" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
-            Fallback: <code>http_status:404</code> (always last)
+        </div>
+      </section>
+      </div>
+
+      <!-- ── Section 4.5: Route Health Diagnostics ────────────────── -->
+      <section v-if="status.config_exists && healthStatus.length > 0" class="card">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="card-title">
+              <Activity class="w-5 h-5 text-brand-500" />
+              Route Health Diagnostics
+            </h2>
+            <p class="text-[10px] mt-1" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
+              HTTP probes to verify if your domain is reachable from the outside world.
+            </p>
           </div>
+          <button @click="checkHealth" class="btn-outline text-xs whitespace-nowrap" :disabled="isCheckingHealth">
+            <Loader2 v-if="isCheckingHealth" class="w-3.5 h-3.5 animate-spin" />
+            <RefreshCw v-else class="w-3.5 h-3.5" />
+            Run Diagnostics
+          </button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="border-b-2" :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
+              <tr>
+                <th class="table-th w-1/3">Hostname</th>
+                <th class="table-th">End-to-End Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="h in healthStatus" :key="h.hostname" class="border-b transition-colors" :class="isDark ? 'hover:bg-slate-800/50 border-slate-700' : 'hover:bg-slate-50 border-slate-100'">
+                <td class="table-td font-semibold" :class="isDark ? 'text-brand-400' : 'text-brand-700'">
+                  {{ h.hostname }}
+                </td>
+                <td class="table-td">
+                  <div class="flex items-center gap-2">
+                    <span v-if="h.code === 'HEALTHY'" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-400 border border-green-200 dark:border-green-800">
+                      <CheckCircle2 class="w-3 h-3 inline mr-1" /> {{ h.status }}
+                    </span>
+                    <span v-else-if="h.code === 'ERR_502'" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400 border border-red-200 dark:border-red-800">
+                      <XCircle class="w-3 h-3 inline mr-1" /> {{ h.status }}
+                    </span>
+                    <span v-else-if="h.code === 'ERR_1033'" class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                      <AlertTriangle class="w-3 h-3 inline mr-1" /> {{ h.status }}
+                    </span>
+                    <span v-else class="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                      <Activity class="w-3 h-3 inline mr-1" /> {{ h.status }}
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
-      <!-- ── Section 4: Quick Reference ────────────────────────── -->
+      <!-- ── Section 5: Quick Reference ────────────────────────── -->
       <section v-if="status.installed" class="card">
         <h2 class="card-title">
           <Terminal class="w-5 h-5 text-brand-500" />

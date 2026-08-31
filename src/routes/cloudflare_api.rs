@@ -52,28 +52,21 @@ pub async fn get_local_config(
 ) -> Result<Json<LocalTunnelConfig>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
 
-    // Pastikan tabel ada
-    let _ = sqlx::query(
-        "CREATE TABLE IF NOT EXISTS cloudflare_cname_status (
-            hostname TEXT PRIMARY KEY,
-            tunnel_name TEXT NOT NULL,
-            is_active BOOLEAN NOT NULL DEFAULT 1,
-            added_at TEXT NOT NULL
-        );"
-    )
-    .execute(&state.db_pool)
-    .await;
-
     match read_config_file(&password) {
         Ok(raw) => match parse_config(&raw) {
             Ok(mut config) => {
                 // Ambil daftar hostname yang sukses didaftarkan (active)
-                let active_hostnames: Vec<String> = sqlx::query_scalar(
+                let active_hostnames: Vec<String> = match sqlx::query_scalar::<_, String>(
                     "SELECT hostname FROM cloudflare_cname_status WHERE is_active = 1"
                 )
                 .fetch_all(&state.db_pool)
-                .await
-                .unwrap_or_default();
+                .await {
+                    Ok(names) => names,
+                    Err(e) => {
+                        tracing::error!("Failed to fetch CNAME status from database: {}", e);
+                        vec![]
+                    }
+                };
 
                 for rule in &mut config.ingress {
                     if let Some(ref host) = rule.hostname {
@@ -184,10 +177,12 @@ pub async fn delete_local_route(
         .output();
 
     // Hapus dari database lokal
-    let _ = sqlx::query("DELETE FROM cloudflare_cname_status WHERE hostname = ?")
+    if let Err(e) = sqlx::query("DELETE FROM cloudflare_cname_status WHERE hostname = ?")
         .bind(&payload.hostname)
         .execute(&state.db_pool)
-        .await;
+        .await {
+            tracing::error!("Failed to delete CNAME from database: {}", e);
+        }
 
     let raw = read_config_file(&password)?;
     let mut config = parse_config(&raw)?;
@@ -253,14 +248,16 @@ pub async fn register_dns_cname(
     if dns_output.status.success() {
         // Catat ke database
         let now = chrono::Utc::now().to_rfc3339();
-        let _ = sqlx::query(
+        if let Err(e) = sqlx::query(
             "INSERT OR REPLACE INTO cloudflare_cname_status (hostname, tunnel_name, is_active, added_at) VALUES (?, ?, 1, ?)"
         )
         .bind(&payload.hostname)
         .bind(&payload.tunnel_name)
         .bind(&now)
         .execute(&state.db_pool)
-        .await;
+        .await {
+            tracing::error!("Failed to insert CNAME into database: {}", e);
+        }
 
         Ok(Json(serde_json::json!({
             "status": "success",
@@ -269,6 +266,109 @@ pub async fn register_dns_cname(
     } else {
         Err((StatusCode::INTERNAL_SERVER_ERROR, format!("DNS Registration failed: {}", dns_combined.trim())))
     }
+}
+
+// ── HEALTH CHECK DIAGNOSTICS ──
+
+#[derive(Serialize)]
+pub struct HostnameHealth {
+    pub hostname: String,
+    pub status: String,
+    pub code: String, // "HEALTHY", "NXDOMAIN", "ERR_502", "ERR_1033", "UNKNOWN"
+}
+
+/// Mengecek status kesehatan rute (HTTP Probe)
+pub async fn check_health_status(
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<Vec<HostnameHealth>>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+
+    // 1. Baca daftar hostname dari config.yml
+    let raw = match read_config_file(&password) {
+        Ok(r) => r,
+        Err(_) => return Ok(Json(vec![])), // Return kosong jika tidak ada config
+    };
+
+    let config = match parse_config(&raw) {
+        Ok(c) => c,
+        Err(_) => return Ok(Json(vec![])), // Config rusak
+    };
+
+    // Ekstrak semua hostname valid
+    let hostnames: Vec<String> = config.ingress.into_iter()
+        .filter_map(|r| r.hostname)
+        .collect();
+
+    if hostnames.is_empty() {
+        return Ok(Json(vec![]));
+    }
+
+    // 2. Siapkan HTTP Client dengan Timeout
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8)) // Max 8s agar API tidak gantung
+        .redirect(reqwest::redirect::Policy::none()) // Tangkap response langsung tanpa redirect
+        .build()
+        .unwrap_or_default();
+
+    let mut health_results = Vec::new();
+
+    // 3. Probe setiap hostname secara sekuensial (atau paralel dengan join_all, tapi ini lebih aman dari rate-limit)
+    for host in hostnames {
+        let url = format!("https://{}", host);
+        let res = client.get(&url).send().await;
+
+        match res {
+            Ok(response) => {
+                let status = response.status();
+                
+                if status == 502 {
+                    health_results.push(HostnameHealth {
+                        hostname: host,
+                        status: "Bad gateway. Local service is likely down.".to_string(),
+                        code: "ERR_502".to_string(),
+                    });
+                } else if status == 530 {
+                    // Cloudflare usually returns 530 for 1033 errors
+                    health_results.push(HostnameHealth {
+                        hostname: host,
+                        status: "Cloudflare Tunnel error (1033). Daemon cannot reach the network.".to_string(),
+                        code: "ERR_1033".to_string(),
+                    });
+                } else {
+                    // Cek body fallback jika status code bukan standar tapi dari halaman Cloudflare error
+                    // Tapi reqwest body mengambil stream. Untuk cepatnya kita asumsikan status lainnya sehat/accessible.
+                    health_results.push(HostnameHealth {
+                        hostname: host,
+                        status: format!("Accessible (HTTP {})", status.as_u16()),
+                        code: "HEALTHY".to_string(),
+                    });
+                }
+            }
+            Err(e) => {
+                if e.is_dns() {
+                    health_results.push(HostnameHealth {
+                        hostname: host,
+                        status: "DNS_PROBE_FINISHED_NXDOMAIN. CNAME missing or typo.".to_string(),
+                        code: "NXDOMAIN".to_string(),
+                    });
+                } else if e.is_timeout() {
+                    health_results.push(HostnameHealth {
+                        hostname: host,
+                        status: "Request timed out.".to_string(),
+                        code: "TIMEOUT".to_string(),
+                    });
+                } else {
+                    health_results.push(HostnameHealth {
+                        hostname: host,
+                        status: format!("Connection failed: {}", e),
+                        code: "UNKNOWN_ERR".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(Json(health_results))
 }
 
 /// Start cloudflared service

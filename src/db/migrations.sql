@@ -39,3 +39,11 @@ CREATE TABLE IF NOT EXISTS system_metrics_history (
     net_rx_bytes INTEGER DEFAULT 0,
     net_tx_bytes INTEGER DEFAULT 0
 );
+
+-- cloudflare_cname_status (Status CNAME DNS Cloudflare Tunnel)
+CREATE TABLE IF NOT EXISTS cloudflare_cname_status (
+    hostname TEXT PRIMARY KEY,
+    tunnel_name TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT 1,
+    added_at TEXT NOT NULL
+);
