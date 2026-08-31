@@ -1,6 +1,6 @@
 # Dokumentasi Internal — InfoIn Server
 
-Dokumen ini ditujukan bagi **developer** dan **AI Agent** yang akan memelihara, membaca, mengembangkan, atau men-debug proyek **InfoIn Server**. Dokumen ini bersifat teknis, berbahasa Indonesia, dan mencakup arsitektur, struktur file, cara kerja fitur, skema database, referensi API, serta catatan keamanan.
+Dokumen ini ditujukan bagi **developer** dan yang akan memelihara, membaca, mengembangkan, atau men-debug proyek **InfoIn Server**. Dokumen ini bersifat teknis, berbahasa Indonesia, dan mencakup arsitektur, struktur file, cara kerja fitur, skema database, referensi API, serta catatan keamanan.
 
 ---
 
