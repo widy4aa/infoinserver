@@ -1,6 +1,13 @@
-use axum::{Json, http::StatusCode, extract::Extension};
+use axum::{
+    Json, http::StatusCode, extract::Extension,
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    response::Response,
+};
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::process::Stdio;
+use std::process::Command as StdCommand; // Rename standard command
+use tokio::process::Command; // Async command for WebSocket
+use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::auth::jwt_middleware::AuthUser;
 use crate::routes::process_mgmt::sudo_exec;
 
@@ -37,7 +44,7 @@ pub async fn get_cloudflare_status(
 ) -> Result<Json<CloudflareStatus>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
     // 1. Cek apakah cloudflared terinstall
-    let installed = Command::new("which")
+    let installed = StdCommand::new("which")
         .arg("cloudflared")
         .output()
         .map(|out| out.status.success())
@@ -57,7 +64,7 @@ pub async fn get_cloudflare_status(
     }
 
     // 2. Ambil versi
-    let version = Command::new("cloudflared")
+    let version = StdCommand::new("cloudflared")
         .arg("--version")
         .output()
         .ok()
@@ -68,7 +75,7 @@ pub async fn get_cloudflare_status(
         });
 
     // 3. Cek service status via systemctl
-    let service_active = Command::new("systemctl")
+    let service_active = StdCommand::new("systemctl")
         .args(["is-active", "cloudflared"])
         .output()
         .map(|out| {
@@ -78,7 +85,7 @@ pub async fn get_cloudflare_status(
         .unwrap_or(false);
 
     // 4. Cek apakah process berjalan (pgrep)
-    let running = Command::new("pgrep")
+    let running = StdCommand::new("pgrep")
         .arg("-x")
         .arg("cloudflared")
         .output()
@@ -117,7 +124,7 @@ pub async fn get_cloudflare_status(
     // 7. Cari nama tunnel berdasarkan UUID via 'cloudflared tunnel list' (Jalankan tanpa sudo agar cert.pem user lokal terbaca)
     let mut tunnel_name = None;
     if let Some(ref uuid) = tunnel_uuid {
-        if let Ok(out) = Command::new("cloudflared").args(["tunnel", "list"]).output() {
+        if let Ok(out) = StdCommand::new("cloudflared").args(["tunnel", "list"]).output() {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout).to_string();
                 // Format stdout biasanya: ID  NAME  CREATED  CONNECTIONS
@@ -164,7 +171,7 @@ pub async fn install_cloudflared(
     let download_path = format!("{}/cloudflared", temp_dir);
 
     // 2. Download via wget ke temp_dir. Wajib periksa exit status.
-    let wget_out = Command::new("wget")
+    let wget_out = StdCommand::new("wget")
         .args(["-q", "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64", "-O", &download_path])
         .output()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to execute wget: {}", e)))?;
@@ -213,7 +220,7 @@ pub async fn create_tunnel(
         return Err((StatusCode::BAD_REQUEST, "Tunnel name may only contain letters, numbers, and dashes".to_string()));
     }
 
-    let output = Command::new("cloudflared")
+    let output = StdCommand::new("cloudflared")
         .args(["tunnel", "create", &payload.name])
         .output()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create tunnel: {}", e)))?;
@@ -408,7 +415,7 @@ pub async fn stop_cloudflare_tunnel(
     })))
 }
 
-/// Mendapatkan logs dari journalctl untuk service cloudflared
+/// Mendapatkan logs dari journalctl untuk service cloudflared (HTTP endpoint, deprecated tapi bisa disimpan sbg fallback)
 pub async fn get_cloudflare_logs(
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
@@ -419,11 +426,58 @@ pub async fn get_cloudflare_logs(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read logs: {}", e)))?;
 
     let logs = String::from_utf8_lossy(&output.stdout).to_string();
-    
-    // Split berdasarkan baris
     let log_lines: Vec<String> = logs.lines().map(|s| s.to_string()).collect();
 
     Ok(Json(serde_json::json!({
         "logs": log_lines
     })))
+}
+
+/// Endpoint WebSocket untuk Live Logs Cloudflare Tunnel
+pub async fn cloudflare_logs_ws_handler(
+    ws: WebSocketUpgrade,
+    // Kita abaikan pengecekan password sudo di sini karena journalctl biasanya bisa dibaca (jika policy OS mengizinkan).
+    // Atau kita asumsikan user OS saat ini sudah memiliki hak akses yang cukup terhadap journalctl unit cloudflared.
+    // Kita spawn process asinkron untuk follow log.
+) -> Response {
+    ws.on_upgrade(handle_cloudflare_logs_ws)
+}
+
+async fn handle_cloudflare_logs_ws(mut socket: WebSocket) {
+    // Jalankan journalctl -u cloudflared -f -n 50 --no-pager
+    let mut child = Command::new("journalctl")
+        .args(["-u", "cloudflared", "-f", "-n", "50", "--no-pager", "-o", "cat"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn journalctl process");
+
+    let stdout = child.stdout.take().expect("Failed to take stdout");
+    let mut reader = BufReader::new(stdout).lines();
+
+    loop {
+        // Cek jika koneksi WebSocket tertutup
+        tokio::select! {
+            line = reader.next_line() => {
+                match line {
+                    Ok(Some(log_line)) => {
+                        if socket.send(Message::Text(log_line.into())).await.is_err() {
+                            break; // Koneksi terputus
+                        }
+                    }
+                    Ok(None) => break, // EOF reached (unlikely with -f)
+                    Err(_) => break, // Error membaca log
+                }
+            }
+            msg = socket.recv() => {
+                // Client terputus atau mengirim pesan close
+                if let Some(Ok(Message::Close(_))) | None = msg {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Jika loop berhenti, matikan proses journalctl
+    let _ = child.kill().await;
 }

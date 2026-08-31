@@ -171,6 +171,7 @@ async fn main() {
         .with_state(state.clone())
         .route("/api/cloudflare/health", get(routes::cloudflare_api::check_health_status))
         .route("/api/cloudflare/logs", get(routes::cloudflare::get_cloudflare_logs))
+        .route("/api/cloudflare/logs/ws", get(routes::cloudflare::cloudflare_logs_ws_handler))
         .route("/api/terminal/start", post(routes::terminal::start_shellinabox_handler))
         .route("/api/terminal/ws", get(routes::terminal_ws::terminal_ws_handler))
         // Apply JWT middleware ke semua protected routes

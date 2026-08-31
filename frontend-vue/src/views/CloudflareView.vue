@@ -268,6 +268,7 @@ const addRoute = async () => {
       newHostname.value = ''
       newService.value = 'http://127.0.0.1:'
       await fetchConfig()
+      checkHealth() // Auto-refresh health diagnostics
     } else {
       await handleApiError(res)
     }
@@ -290,6 +291,7 @@ const deleteRoute = (hostname) => {
         const data = await res.json()
         showToast('Success', data.message, 'success')
         await fetchConfig()
+        checkHealth() // Auto-refresh health diagnostics
       } else {
         await handleApiError(res)
       }
@@ -322,6 +324,7 @@ const registerDns = async (hostname) => {
       showToast('Success', data.message, 'success')
       // Refresh config agar state cname_active berubah di tabel
       await fetchConfig()
+      checkHealth() // Auto-refresh health diagnostics
     } else {
       await handleApiError(res)
     }
@@ -398,23 +401,48 @@ const quickRefCommands = [
   { command: 'cloudflared tunnel login', description: 'Authorize server with Cloudflare (creates cert.pem)' },
 ]
 
-// ── Logs ─────────────────────────────────────────────────────
+// ── Live Logs via WebSocket ──────────────────────────────────
 const logs = ref([])
 const isFetchingLogs = ref(false)
-let logsTimer = null
+const logsContainer = ref(null)
+let ws = null
 
-const fetchLogs = async () => {
-  if (isFetchingLogs.value) return
+const connectLogsWs = () => {
+  if (ws) {
+    ws.close()
+  }
   isFetchingLogs.value = true
-  try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/cloudflare/logs`)
-    if (res.ok) {
-      const data = await res.json()
-      logs.value = data.logs || []
+  logs.value = []
+
+  let wsUrl = getActiveServerUrl().replace(/^http/, 'ws') + '/api/cloudflare/logs/ws'
+  ws = new WebSocket(wsUrl)
+
+  ws.onopen = () => {
+    isFetchingLogs.value = false
+    logs.value.push("--- Connected to Live Logs ---")
+  }
+
+  ws.onmessage = (event) => {
+    logs.value.push(event.data)
+    // Keep max 200 lines to avoid memory leak
+    if (logs.value.length > 200) {
+      logs.value.shift()
     }
-  } catch (e) {
-    console.error("Failed to fetch logs", e)
-  } finally {
+    // Auto scroll to bottom
+    setTimeout(() => {
+      if (logsContainer.value) {
+        logsContainer.value.scrollTop = logsContainer.value.scrollHeight
+      }
+    }, 10)
+  }
+
+  ws.onclose = () => {
+    isFetchingLogs.value = false
+    logs.value.push("--- Connection Closed ---")
+  }
+
+  ws.onerror = (e) => {
+    console.error('WebSocket Error:', e)
     isFetchingLogs.value = false
   }
 }
@@ -422,13 +450,14 @@ const fetchLogs = async () => {
 // ── Lifecycle ────────────────────────────────────────────────
 onMounted(async () => {
   await fetchStatus()
-  fetchLogs()
+  if (status.value?.installed) {
+    connectLogsWs()
+  }
   checkHealth() // Auto check health on load
-  logsTimer = setInterval(fetchLogs, 5000)
 })
 
 onUnmounted(() => {
-  if (logsTimer) clearInterval(logsTimer)
+  if (ws) ws.close()
   if (loginPollTimer) clearInterval(loginPollTimer)
 })
 </script>
@@ -898,15 +927,15 @@ onUnmounted(() => {
           </h2>
           <div class="flex items-center gap-2">
             <span v-if="isFetchingLogs" class="text-xs flex items-center gap-1 text-slate-500">
-              <Loader2 class="w-3 h-3 animate-spin" /> Fetching...
+              <Loader2 class="w-3 h-3 animate-spin" /> Connecting...
             </span>
-            <button @click="fetchLogs" class="btn-outline text-xs" :disabled="isFetchingLogs">
+            <button @click="connectLogsWs" class="btn-outline text-xs" :disabled="isFetchingLogs">
               <RefreshCw class="w-3.5 h-3.5" />
-              Refresh Logs
+              Reconnect
             </button>
           </div>
         </div>
-        <div class="bg-black/90 text-green-400 font-mono text-[11px] p-4 rounded-lg overflow-x-auto h-64 overflow-y-auto whitespace-pre font-medium shadow-inner leading-relaxed">
+        <div ref="logsContainer" class="bg-black/90 text-green-400 font-mono text-[11px] p-4 rounded-lg overflow-x-auto h-64 overflow-y-auto whitespace-pre font-medium shadow-inner leading-relaxed scroll-smooth">
           <div v-if="logs.length === 0" class="text-slate-500 italic">No logs found...</div>
           <div v-for="(line, idx) in logs" :key="idx" :class="{'text-red-400': line.includes('ERR'), 'text-amber-300': line.includes('WRN')}">
             {{ line }}
