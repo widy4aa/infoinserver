@@ -1,5 +1,5 @@
 use axum::{
-    Json, http::StatusCode, extract::Extension,
+    Json, http::StatusCode, extract::Extension, extract::State,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::Response,
 };
@@ -201,6 +201,7 @@ pub async fn install_cloudflared(
 }
 
 pub async fn create_tunnel(
+    State(state): axum::extract::State<crate::AppState>,
     Extension(auth): Extension<AuthUser>,
     Json(payload): Json<CreateTunnelRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
@@ -263,6 +264,8 @@ pub async fn create_tunnel(
             let _ = sudo_exec(&password, &["systemctl", "enable", "cloudflared"]);
             let _ = sudo_exec(&password, &["systemctl", "start", "cloudflared"]);
         }
+
+        crate::routes::logs::log_activity(&state.db_pool, "INFO", "Cloudflare Create Tunnel", &format!("Created tunnel: {}", payload.name)).await;
 
         Ok(Json(serde_json::json!({
             "status": "success",
@@ -347,6 +350,7 @@ pub async fn check_login_status() -> Result<Json<LoginStatusResponse>, (StatusCo
 
 /// Menghapus tunnel secara permanen dari server lokal dan Cloudflare.
 pub async fn delete_tunnel(
+    State(state): axum::extract::State<crate::AppState>,
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
@@ -389,6 +393,8 @@ pub async fn delete_tunnel(
         let credential_path = format!("/etc/cloudflared/{}.json", uuid);
         let _ = sudo_exec(&password, &["rm", "-f", &credential_path]);
         
+        crate::routes::logs::log_activity(&state.db_pool, "WARNING", "Cloudflare Delete Tunnel", &format!("Deleted tunnel UUID: {}", uuid)).await;
+
         Ok(Json(serde_json::json!({
             "status": "success",
             "message": "Tunnel and configurations deleted successfully."

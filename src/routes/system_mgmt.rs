@@ -11,7 +11,9 @@ pub struct MgmtResponse {
     pub message: String,
 }
 
-pub async fn update_dashboard_handler() -> Result<Json<MgmtResponse>, (StatusCode, String)> {
+pub async fn update_dashboard_handler(
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
+) -> Result<Json<MgmtResponse>, (StatusCode, String)> {
     let pull_cmd = Command::new("git")
         .arg("pull")
         .output()
@@ -43,6 +45,8 @@ pub async fn update_dashboard_handler() -> Result<Json<MgmtResponse>, (StatusCod
         std::process::exit(0);
     });
 
+    crate::routes::logs::log_activity(&state.db_pool, "WARNING", "System Update", "User initiated a dashboard update and rebuild").await;
+
     Ok(Json(MgmtResponse {
         status: "success".to_string(),
         message: "Update berhasil di-build. Dashboard sedang di-restart, silakan refresh halaman dalam 5 detik.".to_string(),
@@ -50,6 +54,7 @@ pub async fn update_dashboard_handler() -> Result<Json<MgmtResponse>, (StatusCod
 }
 
 pub async fn reboot_server_handler(
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<MgmtResponse>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
@@ -63,6 +68,7 @@ pub async fn reboot_server_handler(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Reboot failed: {}", e)))?;
 
     if result.status.success() {
+        crate::routes::logs::log_activity(&state.db_pool, "CRITICAL", "System Reboot", "Server is rebooting").await;
         Ok(Json(MgmtResponse {
             status: "success".to_string(),
             message: "Server is rebooting now...".to_string(),

@@ -98,6 +98,7 @@ pub async fn get_local_config(
 /// 1) Update config.yml (DNS CNAME sekarang manual lewat tombol Add CNAME agar lebih aman)
 /// 2) Restart service
 pub async fn add_local_route(
+    State(state): State<AppState>,
     Extension(auth): Extension<AuthUser>,
     Json(payload): Json<AddRouteRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
@@ -153,6 +154,8 @@ pub async fn add_local_route(
     // 4. Restart service
     restart_service_internal(&password)?;
 
+    crate::routes::logs::log_activity(&state.db_pool, "INFO", "Cloudflare Add Route", &format!("Added route: {} -> {}", payload.hostname, payload.service)).await;
+
     Ok(Json(serde_json::json!({
         "status": "success",
         "message": format!("Route '{}' -> '{}' added successfully. Please click 'Add CNAME' to activate DNS.", payload.hostname, payload.service),
@@ -207,6 +210,8 @@ pub async fn delete_local_route(
 
     restart_service_internal(&password)?;
 
+    crate::routes::logs::log_activity(&state.db_pool, "INFO", "Cloudflare Delete Route", &format!("Deleted route: {}", payload.hostname)).await;
+
     Ok(Json(serde_json::json!({
         "status": "success",
         "message": format!("Route '{}' deleted and service restarted.", payload.hostname)
@@ -258,6 +263,8 @@ pub async fn register_dns_cname(
         .await {
             tracing::error!("Failed to insert CNAME into database: {}", e);
         }
+
+        crate::routes::logs::log_activity(&state.db_pool, "INFO", "Cloudflare DNS CNAME", &format!("Registered CNAME for {}", payload.hostname)).await;
 
         Ok(Json(serde_json::json!({
             "status": "success",

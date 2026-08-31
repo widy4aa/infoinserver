@@ -44,6 +44,7 @@ pub async fn get_ufw_status_handler(
 }
 
 pub async fn toggle_ufw_handler(
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
@@ -68,6 +69,7 @@ pub async fn toggle_ufw_handler(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to toggle UFW: {}", e)))?;
 
     if output.status.success() {
+        crate::routes::logs::log_activity(&state.db_pool, "WARNING", "Firewall Toggle", &format!("UFW state changed to: {}", action)).await;
         Ok(Json(serde_json::json!({
             "status": "success",
             "message": format!("UFW has been {}d", action)
@@ -78,6 +80,7 @@ pub async fn toggle_ufw_handler(
 }
 
 pub async fn manage_ufw_rule_handler(
+    axum::extract::State(state): axum::extract::State<crate::AppState>,
     Extension(auth): Extension<AuthUser>,
     Json(payload): Json<UfwActionRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
@@ -105,6 +108,7 @@ pub async fn manage_ufw_rule_handler(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to apply UFW rule: {}", e)))?;
 
     if output.status.success() {
+        crate::routes::logs::log_activity(&state.db_pool, "WARNING", "Firewall Rule", &format!("Rule '{}' applied on port {}", payload.action, payload.port)).await;
         Ok(Json(serde_json::json!({
             "status": "success",
             "message": format!("UFW rule {} {} applied", payload.action, payload.port)
