@@ -325,3 +325,139 @@ pub async fn delete_user_handler(
         Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("userdel failed: {}", err) }))))
     }
 }
+
+// ── SSH KEY MANAGER ──
+
+#[derive(Deserialize)]
+pub struct AddSshKeyRequest {
+    pub key: String,
+}
+
+#[derive(Deserialize)]
+pub struct DeleteSshKeyRequest {
+    pub key: String,
+}
+
+fn get_authorized_keys_path(username: &str) -> String {
+    if username == "root" {
+        "/root/.ssh/authorized_keys".to_string()
+    } else {
+        format!("/home/{}/.ssh/authorized_keys", username)
+    }
+}
+
+pub async fn get_ssh_keys_handler(
+    Path(username): Path<String>,
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<Vec<String>>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    let path = get_authorized_keys_path(&username);
+
+    let out = tokio::task::spawn_blocking(move || {
+        sudo_exec(&password, &["cat", &path])
+    }).await.unwrap();
+
+    // Jika file tidak ada, itu bukan error, berarti belum ada kunci
+    match out {
+        Ok(output) if output.status.success() => {
+            let content = String::from_utf8_lossy(&output.stdout).to_string();
+            let keys = content.lines().filter(|l| !l.trim().is_empty() && !l.trim().starts_with('#')).map(|s| s.to_string()).collect();
+            Ok(Json(keys))
+        }
+        _ => Ok(Json(vec![])),
+    }
+}
+
+pub async fn add_ssh_key_handler(
+    State(state): axum::extract::State<crate::AppState>,
+    Path(username): Path<String>,
+    Extension(auth): Extension<AuthUser>,
+    Json(payload): Json<AddSshKeyRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    let path = get_authorized_keys_path(&username);
+    let key = payload.key.trim().to_string();
+
+    if key.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Key cannot be empty".to_string()));
+    }
+
+    if !key.starts_with("ssh-rsa ") && !key.starts_with("ssh-ed25519 ") && !key.starts_with("ecdsa-sha2-nistp256 ") {
+        return Err((StatusCode::BAD_REQUEST, "Invalid SSH key format. Must start with ssh-rsa, ssh-ed25519, etc.".to_string()));
+    }
+
+    // Pastikan folder .ssh ada
+    let ssh_dir = if username == "root" { "/root/.ssh".to_string() } else { format!("/home/{}/.ssh", username) };
+    
+    let p = password.clone();
+    let d = ssh_dir.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        let _ = sudo_exec(&p, &["mkdir", "-p", &d]);
+        let _ = sudo_exec(&p, &["chmod", "700", &d]);
+    }).await.unwrap();
+
+    let p = password.clone();
+    let out = tokio::task::spawn_blocking(move || {
+        // Kita escape echo dengan aman
+        let escaped = key.replace("'", "'\\''");
+        let cmd = format!("echo '{}' >> {}", escaped, path);
+        sudo_exec(&p, &["sh", "-c", &cmd])
+    }).await.unwrap()
+      .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if out.status.success() {
+        // Pastikan hak akses file benar
+        let p = password.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let _ = sudo_exec(&p, &["chmod", "600", &path]);
+        }).await.unwrap();
+
+        crate::routes::logs::log_activity(&state.db_pool, "WARNING", "SSH Key Added", &format!("Added SSH key to user {}", username)).await;
+        Ok(Json(serde_json::json!({"status": "success", "message": "SSH key added successfully"})))
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr);
+        Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to add key: {}", err)))
+    }
+}
+
+pub async fn delete_ssh_key_handler(
+    State(state): axum::extract::State<crate::AppState>,
+    Path(username): Path<String>,
+    Extension(auth): Extension<AuthUser>,
+    Json(payload): Json<DeleteSshKeyRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    let path = get_authorized_keys_path(&username);
+    let key_to_remove = payload.key.trim().to_string();
+
+    let out = tokio::task::spawn_blocking(move || {
+        sudo_exec(&password, &["cat", &path])
+    }).await.unwrap();
+
+    if let Ok(output) = out {
+        if output.status.success() {
+            let content = String::from_utf8_lossy(&output.stdout).to_string();
+            // Filter keys
+            let new_content: Vec<&str> = content.lines().filter(|l| l.trim() != key_to_remove).collect();
+            let new_content_str = new_content.join("\n") + "\n";
+            
+            // Tulis kembali
+            let p = auth.0.pwd.clone();
+            let out2 = tokio::task::spawn_blocking(move || {
+                let encoded = unsafe { String::from_utf8_unchecked(base64::encode(new_content_str).into_bytes()) };
+                let cmd = format!("echo '{}' | base64 -d > {}", encoded, path);
+                sudo_exec(&p, &["sh", "-c", &cmd])
+            }).await.unwrap()
+              .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+            if out2.status.success() {
+                crate::routes::logs::log_activity(&state.db_pool, "WARNING", "SSH Key Removed", &format!("Removed SSH key from user {}", username)).await;
+                return Ok(Json(serde_json::json!({"status": "success", "message": "SSH key deleted successfully"})));
+            } else {
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to write updated authorized_keys".to_string()));
+            }
+        }
+    }
+    
+    Err((StatusCode::NOT_FOUND, "authorized_keys not found or failed to read".to_string()))
+}

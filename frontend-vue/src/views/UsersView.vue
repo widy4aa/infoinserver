@@ -4,7 +4,7 @@ import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
 import { useThemeStore } from '../stores/themeStore'
-import { Users, UserPlus, Key, Shield, Trash2, Loader2, X } from 'lucide-vue-next'
+import { Users, UserPlus, Key, Shield, Trash2, Loader2, X, Lock } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
@@ -67,6 +67,73 @@ const handleAddUser = async () => {
   } catch (e) {
     showToast("Error", e.message, "error")
   }
+}
+
+// ── SSH KEYS ──
+const showSshModal = ref(false)
+const sshTargetUser = ref('')
+const sshKeys = ref([])
+const newSshKey = ref('')
+const isLoadingSsh = ref(false)
+
+const openSshModal = async (username) => {
+  sshTargetUser.value = username
+  showSshModal.value = true
+  await fetchSshKeys()
+}
+
+const fetchSshKeys = async () => {
+  isLoadingSsh.value = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/users/${sshTargetUser.value}/ssh`)
+    if (res.ok) {
+      sshKeys.value = await res.json()
+    }
+  } catch (e) {
+    showToast("Error", "Failed to fetch SSH keys", "error")
+  } finally {
+    isLoadingSsh.value = false
+  }
+}
+
+const addSshKey = async () => {
+  if (!newSshKey.value.trim()) return
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/users/${sshTargetUser.value}/ssh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: newSshKey.value })
+    })
+    if (res.ok) {
+      showToast("Success", "SSH Key added", "success")
+      newSshKey.value = ''
+      await fetchSshKeys()
+    } else {
+      showToast("Error", await res.text(), "error")
+    }
+  } catch (e) {
+    showToast("Error", "Failed to add SSH key", "error")
+  }
+}
+
+const deleteSshKey = async (key) => {
+  showConfirm("Remove Key", "Remove this SSH key from authorized_keys?", async () => {
+    try {
+      const res = await apiFetch(`${getActiveServerUrl()}/api/users/${sshTargetUser.value}/ssh`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key })
+      })
+      if (res.ok) {
+        showToast("Success", "SSH Key removed", "success")
+        await fetchSshKeys()
+      } else {
+        showToast("Error", await res.text(), "error")
+      }
+    } catch (e) {
+      showToast("Error", "Failed to remove SSH key", "error")
+    }
+  })
 }
 
 // ── CHANGE PASSWORD ──
@@ -212,7 +279,8 @@ onMounted(fetchUsersAndGroups)
               </td>
               <td class="table-td text-right">
                 <div class="flex items-center justify-end gap-1.5">
-                  <button @click="openPassModal(user.username)" class="btn-icon-amber" title="Change Password"><Key class="w-3.5 h-3.5" /></button>
+                  <button @click="openSshModal(user.username)" class="p-1.5 rounded bg-emerald-100 text-emerald-600 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50" title="Manage SSH Keys"><Key class="w-3.5 h-3.5" /></button>
+                  <button @click="openPassModal(user.username)" class="btn-icon-amber" title="Change Password"><Lock class="w-3.5 h-3.5" /></button>
                   <button @click="openGroupModal(user)" class="btn-icon-blue" title="Manage Groups"><Shield class="w-3.5 h-3.5" /></button>
                   <button @click="handleDeleteUser(user.username)" class="btn-icon-red" title="Delete User"><Trash2 class="w-3.5 h-3.5" /></button>
                 </div>
@@ -293,6 +361,48 @@ onMounted(fetchUsersAndGroups)
           <div class="p-4 border-t flex justify-end gap-2 shrink-0" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
             <button @click="showGroupModal = false" class="btn-outline">Cancel</button>
             <button @click="handleUpdateGroups" class="btn-primary">Save Groups</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Modal: SSH Keys -->
+    <Teleport to="body">
+      <div v-if="showSshModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
+        <div class="rounded-xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col h-[80vh]" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <div class="p-4 border-b flex justify-between items-center shrink-0" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
+            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'">
+              <Key class="w-4 h-4 text-emerald-500"/> SSH Keys for {{ sshTargetUser }}
+            </h3>
+            <button @click="showSshModal = false" class="transition-colors" :class="isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'"><X class="w-4 h-4"/></button>
+          </div>
+          
+          <div class="p-4 flex-1 overflow-y-auto space-y-4">
+            <!-- Add new key -->
+            <div>
+              <label class="block text-xs font-semibold mb-1" :class="isDark ? 'text-slate-400' : 'text-slate-600'">Add New Public Key</label>
+              <textarea v-model="newSshKey" rows="3" class="input-field w-full font-mono text-[10px]" placeholder="ssh-rsa AAAAB3..."></textarea>
+              <div class="mt-2 text-right">
+                <button @click="addSshKey" class="btn-primary py-1 px-3 text-xs">Add Key</button>
+              </div>
+            </div>
+
+            <hr :class="isDark ? 'border-slate-700' : 'border-slate-200'" />
+
+            <!-- List keys -->
+            <div>
+              <label class="block text-xs font-semibold mb-2" :class="isDark ? 'text-slate-400' : 'text-slate-600'">Authorized Keys ({{ sshKeys.length }})</label>
+              <div v-if="isLoadingSsh" class="text-center py-4"><Loader2 class="w-5 h-5 animate-spin mx-auto text-brand-500" /></div>
+              <div v-else-if="sshKeys.length === 0" class="text-center py-6 italic text-slate-500 text-sm">No SSH keys found for this user.</div>
+              <div v-else class="space-y-2">
+                <div v-for="(key, i) in sshKeys" :key="i" class="flex gap-2 items-start p-2 rounded border" :class="isDark ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
+                  <div class="flex-1 overflow-x-auto">
+                    <pre class="font-mono text-[10px] whitespace-pre-wrap break-all" :class="isDark ? 'text-slate-300' : 'text-slate-600'">{{ key }}</pre>
+                  </div>
+                  <button @click="deleteSshKey(key)" class="shrink-0 p-1.5 text-red-500 hover:bg-red-500/20 rounded" title="Remove Key"><Trash2 class="w-3.5 h-3.5" /></button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { useServerStore } from '../stores/serverStore'
 import { onMounted, onUnmounted, ref } from 'vue'
 import NativeTerminal from '../components/NativeTerminal.vue'
 import LoginModal from '../components/LoginModal.vue'
-import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle, Users, PowerSquare, ScrollText, Clock } from 'lucide-vue-next'
+import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle, Users, PowerSquare, ScrollText, Clock, Download } from 'lucide-vue-next'
 
 const route = useRoute()
 const { setActiveServer, servers, isAuthenticated, getUsername, clearToken } = useServerStore()
@@ -87,8 +87,8 @@ onUnmounted(() => {
           <RouterLink :to="`/server/${currentServer.id}/dashboard`" class="tab-item" active-class="tab-active">
             <LayoutDashboard class="w-4 h-4" /> System
           </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/speedtest`" class="tab-item" active-class="tab-active">
-            <Activity class="w-4 h-4" /> Speedtest
+          <RouterLink :to="`/server/${currentServer.id}/updates`" class="tab-item" active-class="tab-active">
+            <Download class="w-4 h-4" /> Updates
           </RouterLink>
           <RouterLink :to="`/server/${currentServer.id}/services`" class="tab-item" active-class="tab-active">
             <PowerSquare class="w-4 h-4" /> Services

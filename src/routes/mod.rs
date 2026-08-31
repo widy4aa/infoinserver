@@ -19,3 +19,5 @@ pub mod services_mgmt;
 pub mod syslogs;
 pub mod cron_mgmt;
 pub mod process_mgmt;
+pub mod fail2ban;
+pub mod system_updates;

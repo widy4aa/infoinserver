@@ -39,10 +39,11 @@ const parsedLogs = computed(() => {
 const fetchSyslogs = async () => {
   if (activeTab.value !== 'journal') return
   try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/syslogs`)
+    const res = await apiFetch(`${getActiveServerUrl()}/api/syslogs?filter=all`)
     if (res.ok) {
       const data = await res.json()
-      rawLogs.value = data.logs
+      // Split the single string block into an array of lines, remove empty lines
+      rawLogs.value = (data.logs || '').split('\n').filter(l => l.trim() !== '')
       scrollToBottom(logContainer.value)
     } else {
       const err = await res.text()
