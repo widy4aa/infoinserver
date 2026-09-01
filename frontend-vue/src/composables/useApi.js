@@ -1,23 +1,19 @@
 // src/composables/useApi.js
 // Wrapper fetch yang otomatis inject Authorization: Bearer token per server
-// Jika response 401 atau mengandung error autentikasi sudo → clear token → kembali ke halaman utama
+// Menggunakan getActiveToken() untuk mendukung multi-user session
 
 import { useServerStore } from '../stores/serverStore'
 import { useRouter } from 'vue-router'
 import { useToastStore } from '../stores/toastStore'
 
 export const useApi = () => {
-  const { getToken, activeServerId, clearToken } = useServerStore()
+  const { getActiveToken, activeServerId, removeUser, getActiveUsername, listServerUsers } = useServerStore()
   const router = useRouter()
   const toastStore = useToastStore()
 
-  /**
-   * apiFetch — drop-in replacement untuk fetch()
-   * Otomatis tambah Authorization header dari token server aktif
-   * Jika 401 atau error sudo auth failed → hapus token & kick ke homepage
-   */
   const apiFetch = async (url, options = {}) => {
-    const token = getToken(activeServerId.value)
+    // Gunakan getActiveToken agar mendukung multi-user switch
+    const token = getActiveToken(activeServerId.value)
 
     const headers = {
       ...(options.headers || {}),
@@ -43,24 +39,36 @@ export const useApi = () => {
     }
 
     if (isAuthFailed) {
-      // Hapus token
-      clearToken(activeServerId.value)
-      
-      // Tampilkan toast peringatan
-      if (toastStore) {
-        toastStore.showToast("Session Expired", "Server authentication failed. Please login again.", "error")
+      const currentUser = getActiveUsername(activeServerId.value)
+      const serverId = activeServerId.value
+
+      // Hapus token user yang bermasalah dari daftar
+      if (currentUser) {
+        removeUser(serverId, currentUser)
       }
 
-      // Paksa kembali ke Homepage (Root /)
-      if (router) {
-        router.push('/')
-      } else {
-        // Fallback jika router gagal di-load di dalam composable
-        window.location.href = '/'
+      // Cek apakah masih ada user lain yang bisa dipakai
+      const remainingUsers = listServerUsers(serverId)
+
+      if (toastStore) {
+        if (remainingUsers.length > 0) {
+          toastStore.showToast("Session Expired", `Session for "${currentUser}" expired. Switched to "${remainingUsers[0]}".`, "warning")
+        } else {
+          toastStore.showToast("Session Expired", "Authentication failed. Please login again.", "error")
+        }
       }
-      
-      // Ubah status response agar pemanggil (.catch di view) berhenti melanjutkan proses
-      return Promise.reject(new Error("Authentication failed (Sudo/JWT)"))
+
+      if (remainingUsers.length === 0) {
+        // Tidak ada user tersisa, redirect ke homepage untuk login ulang
+        if (router) {
+          router.push('/')
+        } else {
+          window.location.href = '/'
+        }
+      }
+      // Jika masih ada user lain, tinggalkan agar komponen re-render otomatis
+
+      return Promise.reject(new Error("Authentication failed"))
     }
 
     return res
@@ -68,3 +76,4 @@ export const useApi = () => {
 
   return { apiFetch }
 }
+

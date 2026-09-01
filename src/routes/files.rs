@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, Multipart},
+    extract::{Query, Multipart, Extension},
     http::{header, StatusCode},
     response::IntoResponse,
     Json,
@@ -10,6 +10,7 @@ use std::process::Command;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
+use crate::auth::jwt_middleware::AuthUser;
 use crate::services::file_manager::{
     list_directory, resolve_and_validate_path, resolve_path_safe,
     check_write_permission, get_removable_mounts, FileInfo
@@ -26,29 +27,43 @@ pub struct FetchUrlRequest {
     pub path: String,
 }
 
-/// Helper: dapatkan home_root dari env, dengan expand $HOME otomatis
-fn get_home_root() -> String {
+/// Helper: dapatkan home_root berdasarkan username dari session JWT.
+/// Jika FILE_ROOT=$HOME, expand ke /home/<username> (bukan env $HOME backend).
+/// Ini memungkinkan user switch menggunakan file explorer di home directory mereka masing-masing.
+fn get_home_root(username: &str) -> String {
     let val = env::var("FILE_ROOT").unwrap_or_else(|_| "$HOME".to_string());
     if val == "$HOME" || val.starts_with("$HOME/") {
-        // Expand $HOME ke home directory aktual dari environment OS
-        let home = env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-        val.replace("$HOME", &home)
+        // Expand $HOME ke home directory user yang sedang login di session
+        // bukan $HOME dari environment variable backend OS
+        let user_home = if username.is_empty() {
+            // Fallback ke env $HOME jika username tidak tersedia
+            env::var("HOME").unwrap_or_else(|_| "/root".to_string())
+        } else {
+            format!("/home/{}", username)
+        };
+        val.replace("$HOME", &user_home)
     } else {
         val
     }
 }
 
 /// Endpoint untuk membaca konfigurasi file manager (dibutuhkan frontend untuk tentukan read-only)
-pub async fn get_files_config_handler() -> Json<serde_json::Value> {
-    let home_root = get_home_root();
+pub async fn get_files_config_handler(
+    Extension(auth): Extension<AuthUser>,
+) -> Json<serde_json::Value> {
+    let username = auth.0.sub.clone();
+    let home_root = get_home_root(&username);
     Json(serde_json::json!({
         "home_root": home_root,
         "system_root": "/"
     }))
 }
 
-pub async fn list_files_handler(Query(query): Query<FileQuery>) -> Result<Json<Vec<FileInfo>>, (StatusCode, String)> {
-    let home_root = get_home_root();
+pub async fn list_files_handler(
+    Extension(auth): Extension<AuthUser>,
+    Query(query): Query<FileQuery>,
+) -> Result<Json<Vec<FileInfo>>, (StatusCode, String)> {
+    let home_root = get_home_root(&auth.0.sub);
     let req_path = query.path.unwrap_or_else(|| "/".to_string());
 
     // Izinkan akses ke seluruh filesystem (Opsi A)
@@ -98,10 +113,11 @@ pub async fn download_file_handler(Query(query): Query<FileQuery>) -> Result<imp
 }
 
 pub async fn upload_file_handler(
+    Extension(auth): Extension<AuthUser>,
     Query(query): Query<FileQuery>,
     mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let home_root = get_home_root();
+    let home_root = get_home_root(&auth.0.sub);
     let req_path = query.path.unwrap_or_else(|| "/".to_string());
     
     // Upload wajib cek write permission
@@ -155,8 +171,11 @@ pub async fn upload_file_handler(
     })))
 }
 
-pub async fn fetch_url_handler(Json(payload): Json<FetchUrlRequest>) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let home_root = get_home_root();
+pub async fn fetch_url_handler(
+    Extension(auth): Extension<AuthUser>,
+    Json(payload): Json<FetchUrlRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let home_root = get_home_root(&auth.0.sub);
     
     let valid_dir = resolve_path_safe(&payload.path)
         .map_err(|e| (StatusCode::FORBIDDEN, e))?;
@@ -200,8 +219,11 @@ pub struct FileTextRequest {
     pub path: String,
     pub content: Option<String>, // Jika ada isinya, berarti WRITE. Jika kosong, berarti READ.
 }
-pub async fn file_action_handler(Json(payload): Json<FileActionRequest>) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let home_root = get_home_root();
+pub async fn file_action_handler(
+    Extension(auth): Extension<AuthUser>,
+    Json(payload): Json<FileActionRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let home_root = get_home_root(&auth.0.sub);
     let removable_mounts = get_removable_mounts();
     
     // Resolve target path
@@ -312,8 +334,11 @@ pub async fn file_action_handler(Json(payload): Json<FileActionRequest>) -> Resu
     }
 }
 
-pub async fn text_file_handler(Json(payload): Json<FileTextRequest>) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let home_root = get_home_root();
+pub async fn text_file_handler(
+    Extension(auth): Extension<AuthUser>,
+    Json(payload): Json<FileTextRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let home_root = get_home_root(&auth.0.sub);
     
     let valid_path = resolve_path_safe(&payload.path)
         .map_err(|e| (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))))?;
@@ -439,7 +464,10 @@ pub struct SearchResult {
     pub writable: bool,
 }
 
-pub async fn search_files_handler(Query(query): Query<SearchQuery>) -> Result<Json<Vec<SearchResult>>, (StatusCode, String)> {
+pub async fn search_files_handler(
+    Extension(auth): Extension<AuthUser>,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<Vec<SearchResult>>, (StatusCode, String)> {
     let search_term = query.query.trim().to_string();
     if search_term.is_empty() || search_term.len() < 2 {
         return Err((StatusCode::BAD_REQUEST, "Search query must be at least 2 characters".to_string()));
@@ -449,7 +477,7 @@ pub async fn search_files_handler(Query(query): Query<SearchQuery>) -> Result<Js
     let valid_base = resolve_path_safe(&base_path)
         .map_err(|e| (StatusCode::FORBIDDEN, e))?;
 
-    let home_root = get_home_root();
+    let home_root = get_home_root(&auth.0.sub);
     let removable_mounts = get_removable_mounts();
 
     // Gunakan 'find' command — exclude /proc dan /sys yang bisa hang

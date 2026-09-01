@@ -7,7 +7,7 @@ import { useThemeStore } from '../stores/themeStore'
 import { Download, RefreshCw, Terminal, CheckCircle2, AlertTriangle, Box } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
-const { getActiveServerUrl } = useServerStore()
+const { getActiveServerUrl, getToken, activeServerId } = useServerStore()
 const { showToast } = useToastStore()
 const { isDark } = useThemeStore()
 
@@ -40,7 +40,9 @@ const startUpgrade = () => {
   showUpgradeModal.value = true
   upgradeLogs.value = []
   
+  const token = getToken(activeServerId.value)
   const wsUrl = getActiveServerUrl().replace(/^http/, 'ws') + '/api/system/os_updates/ws'
+               + (token ? '?token=' + encodeURIComponent(token) : '')
   ws = new WebSocket(wsUrl)
 
   ws.onopen = () => {

@@ -1,17 +1,69 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import { useServerStore } from '../stores/serverStore'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import NativeTerminal from '../components/NativeTerminal.vue'
 import LoginModal from '../components/LoginModal.vue'
-import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle, Users, PowerSquare, ScrollText, Clock, Download, Server } from 'lucide-vue-next'
+import AddUserForm from '../components/AddUserForm.vue'
+import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle, Users, PowerSquare, ScrollText, Clock, Download, Server, ChevronDown, Plus, LogOut, Check } from 'lucide-vue-next'
 import { getDistroIcon } from '../utils/distro.js'
+import { useThemeStore } from '../stores/themeStore'
+
+const { isDark } = useThemeStore()
 
 const route = useRoute()
-const { setActiveServer, servers, isAuthenticated, getUsername, clearToken } = useServerStore()
+const { setActiveServer, servers, isAuthenticated, getUsername, getActiveUsername, clearToken, listServerUsers, switchUser, removeUser, addUserToken, activeServerId } = useServerStore()
 const currentServer = ref(null)
 const showTerminal = ref(false)
 const showLogin = ref(false)
+
+// ── User Switcher State ──────────────────────────────────────
+const showUserDropdown = ref(false)
+const showAddUserModal = ref(false)
+
+const currentUsers = computed(() => {
+  if (!currentServer.value?.id) return []
+  return listServerUsers(currentServer.value.id)
+})
+
+const activeUser = computed(() => {
+  if (!currentServer.value?.id) return null
+  return getActiveUsername(currentServer.value.id)
+})
+
+const handleSwitchUser = (username) => {
+  if (!currentServer.value?.id) return
+  switchUser(currentServer.value.id, username)
+  showUserDropdown.value = false
+  // File explorer dan komponen lain akan re-render otomatis karena token berubah
+}
+
+const handleRemoveUser = (username) => {
+  if (!currentServer.value?.id) return
+  const serverId = currentServer.value.id
+  const wasActive = activeUser.value === username
+  removeUser(serverId, username)
+  showUserDropdown.value = false
+  // Jika user yang dihapus adalah yang aktif dan tidak ada user tersisa, logout
+  if (wasActive && currentUsers.value.length === 0) {
+    showLogin.value = true
+  }
+}
+
+const handleAddUserSuccess = (newUsername, newToken) => {
+  if (!currentServer.value?.id) return
+  addUserToken(currentServer.value.id, newUsername, newToken)
+  // Set user baru sebagai aktif
+  switchUser(currentServer.value.id, newUsername)
+  showAddUserModal.value = false
+}
+
+// Tutup dropdown saat klik di luar
+const handleClickOutside = (e) => {
+  if (!e.target.closest('.user-switcher-container')) {
+    showUserDropdown.value = false
+  }
+}
 
 // Logout manual — hanya dipanggil saat klik tombol Back ke Home
 const handleGoHome = () => {
@@ -73,6 +125,7 @@ onMounted(() => {
   currentServer.value = server
   checkAuth()
   window.addEventListener('auth:expired', handleAuthExpired)
+  window.addEventListener('click', handleClickOutside)
   
   checkPing() // Immediate check
   pingInterval = setInterval(checkPing, 3000)
@@ -80,6 +133,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('auth:expired', handleAuthExpired)
+  window.removeEventListener('click', handleClickOutside)
   if (pingInterval) clearInterval(pingInterval)
   // Tidak hapus token di sini — supaya refresh tidak logout
 })
@@ -103,9 +157,63 @@ onUnmounted(() => {
           <div>
             <div class="flex items-center gap-2">
               <h2 class="font-bold text-lg text-slate-800 dark:text-slate-100 leading-tight">{{ currentServer.name }}</h2>
-              <span v-if="getUsername(currentServer.id)" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                <User class="w-3 h-3" />{{ getUsername(currentServer.id) }}
-              </span>
+              <!-- User Switcher Dropdown (menggantikan badge username sederhana) -->
+              <div class="relative user-switcher-container" v-if="activeUser">
+                <button @click.stop="showUserDropdown = !showUserDropdown"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold transition-colors cursor-pointer select-none"
+                  :class="isDark ? 'bg-blue-900/30 text-blue-300 hover:bg-blue-900/50' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'">
+                  <User class="w-3 h-3" />
+                  {{ activeUser }}
+                  <ChevronDown class="w-3 h-3 transition-transform" :class="showUserDropdown ? 'rotate-180' : ''" />
+                </button>
+
+                <!-- Dropdown -->
+                <div v-if="showUserDropdown"
+                  class="absolute left-0 top-full mt-1.5 rounded-xl shadow-xl border z-[200] overflow-hidden min-w-[200px]"
+                  :class="isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'">
+                  <!-- Header -->
+                  <div class="px-3 py-2 border-b text-[10px] font-bold uppercase tracking-wider text-slate-500"
+                    :class="isDark ? 'border-slate-700' : 'border-slate-100'">
+                    Switch User
+                  </div>
+                  <!-- User List -->
+                  <div class="py-1">
+                    <button v-for="username in currentUsers" :key="username"
+                      @click="handleSwitchUser(username)"
+                      class="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm transition-colors text-left"
+                      :class="isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'">
+                      <div class="flex items-center gap-2 min-w-0">
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold"
+                          :class="username === activeUser
+                            ? 'bg-blue-500 text-white'
+                            : (isDark ? 'bg-slate-600 text-slate-300' : 'bg-slate-200 text-slate-600')">
+                          {{ username.charAt(0).toUpperCase() }}
+                        </div>
+                        <span class="truncate font-medium" :class="isDark ? 'text-slate-200' : 'text-slate-700'">
+                          {{ username }}
+                        </span>
+                      </div>
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        <Check v-if="username === activeUser" class="w-3.5 h-3.5 text-blue-500" />
+                        <button v-else @click.stop="handleRemoveUser(username)"
+                          class="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-500"
+                          title="Remove user">
+                          <LogOut class="w-3 h-3" />
+                        </button>
+                      </div>
+                    </button>
+                  </div>
+                  <!-- Divider + Add User -->
+                  <div class="border-t" :class="isDark ? 'border-slate-700' : 'border-slate-100'">
+                    <button @click="showAddUserModal = true; showUserDropdown = false"
+                      class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition-colors"
+                      :class="isDark ? 'text-brand-400 hover:bg-slate-700' : 'text-brand-600 hover:bg-slate-50'">
+                      <Plus class="w-3.5 h-3.5" />
+                      Add Another User
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="text-xs text-slate-500 dark:text-slate-400 font-mono">{{ currentServer.url }}</div>
           </div>
@@ -188,12 +296,42 @@ onUnmounted(() => {
     <!-- Terminal Modal — pakai Teleport ke body, render via visible prop -->
     <NativeTerminal :visible="showTerminal" @close="showTerminal = false" />
 
-    <!-- Login Modal -->
+    <!-- Login Modal (untuk autentikasi pertama kali / session expired) -->
     <LoginModal
       v-if="showLogin"
       :server="currentServer"
       @success="onLoginSuccess"
     />
+
+    <!-- Add User Modal (untuk tambah user baru ke switcher) -->
+    <Teleport to="body">
+      <div v-if="showAddUserModal"
+        class="fixed inset-0 z-[200] backdrop-blur-sm flex items-center justify-center p-4"
+        :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/60'">
+        <div class="rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+          :class="isDark ? 'bg-slate-800' : 'bg-white'">
+
+          <!-- Header -->
+          <div class="px-6 py-5 flex items-center gap-3 border-b"
+            :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-900'">
+            <div class="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center shrink-0">
+              <Plus class="w-4 h-4 text-white" />
+            </div>
+            <div class="min-w-0">
+              <h2 class="text-white font-semibold text-sm leading-tight">Add Another User</h2>
+              <div class="text-slate-400 text-xs font-mono truncate mt-0.5">{{ currentServer?.name }} · {{ currentServer?.url }}</div>
+            </div>
+          </div>
+
+          <!-- Form -->
+          <AddUserForm
+            :server="currentServer"
+            @success="handleAddUserSuccess"
+            @cancel="showAddUserModal = false"
+          />
+        </div>
+      </div>
+    </Teleport>
   </div>
 
   <div v-else class="text-center py-12 text-slate-500 dark:text-slate-400 flex flex-col items-center justify-center">

@@ -1,6 +1,6 @@
 # Dokumentasi Internal — InfoIn Server
 
-Dokumen ini ditujukan bagi **developer** dan yang akan memelihara, membaca, mengembangkan, atau men-debug proyek **InfoIn Server**. Dokumen ini bersifat teknis, berbahasa Indonesia, dan mencakup arsitektur, struktur file, cara kerja fitur, skema database, referensi API, serta catatan keamanan.
+Dokumen ini ditujukan bagi **developer** dan **AI Agent** yang akan memelihara, membaca, mengembangkan, atau men-debug proyek **InfoIn Server**. Dokumen ini bersifat teknis, berbahasa Indonesia, dan mencakup arsitektur, struktur file, cara kerja fitur, skema database, referensi API, serta catatan keamanan.
 
 ---
 
@@ -9,31 +9,31 @@ Dokumen ini ditujukan bagi **developer** dan yang akan memelihara, membaca, meng
 InfoIn Server menggunakan arsitektur **Decoupled Backend-Frontend**:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Browser (Vue 3 SPA)                                                │
-│  - Komunikasi via HTTP REST + 4 channel WebSocket                   │
-│  - Token JWT disimpan di sessionStorage per-server                  │
-│  - State server (daftar, token) disimpan di localStorage            │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │ HTTP / WebSocket
+┌────────────────────────────────────────────────────────────────────────┐
+│  Browser (Vue 3 SPA)                                                   │
+│  - Komunikasi via HTTP REST + 4 channel WebSocket                      │
+│  - Token JWT multi-user disimpan di sessionStorage per-server          │
+│  - State server (daftar, active user) disimpan di localStorage         │
+└──────────────────────────────┬─────────────────────────────────────────┘
+                               │ HTTP / WebSocket (?token=...)
                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  Backend Rust (Axum 0.8 + Tokio)                                    │
-│  - REST API + WebSocket handlers                                     │
-│  - PAM authentication + JWT middleware                               │
-│  - Baca kernel: /proc, /sys, /dev                                   │
-│  - Eksekusi OS command via sudo                                      │
-│  - SQLite via SQLx (async)                                           │
-│  - Background scheduler (tokio::spawn)                              │
-└─────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│  Backend Rust (Axum 0.8 + Tokio)                                       │
+│  - REST API + WebSocket handlers (PTY, Metrics, Logs, OS Updates)      │
+│  - PAM authentication + Strict Sudo/Wheel Validation                   │
+│  - Baca filesystem/kernel: /proc, /sys, /dev, lsblk, find              │
+│  - Eksekusi OS command via sudo -S (injeksi password aman via stdin)   │
+│  - SQLite via SQLx (async) untuk history, log, dan state lokal         │
+│  - Background scheduler (tokio::spawn)                                 │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### State Management Backend
 
-Backend menggunakan 2 tipe state yang diinjeksikan ke handler via Axum `State`:
+Backend menggunakan 3 tipe state yang diinjeksikan ke router via `.with_state()`:
 
 ```rust
-// AppState — untuk sebagian besar handler
+// AppState — untuk sebagian besar handler (termasuk Auth, Cloudflare, User, File)
 pub struct AppState {
     sys: Arc<Mutex<System>>,       // sysinfo, untuk metrics CPU/RAM
     networks: Arc<Mutex<Networks>>,// sysinfo, untuk statistik network
@@ -44,13 +44,9 @@ pub struct AppState {
 pub struct ContainerState {
     pub runtime: Arc<RwLock<Option<RuntimeInfo>>>,
 }
+
+// (Implisit) Stateless Routes — untuk endpoint login atau info basic
 ```
-
-### Background Tasks
-
-Dijalankan sekali saat startup via `background::scheduler::start_background_tasks()`:
-- **Rekam metrics** ke `system_metrics_history` setiap **5 menit**
-- **Deteksi anomali** CPU > 90%, RAM > 90%, Disk sisa < 10% — tulis ke `activity_log`
 
 ---
 
@@ -59,113 +55,77 @@ Dijalankan sekali saat startup via `background::scheduler::start_background_task
 ```
 .
 ├── Cargo.toml                    # Dependensi Rust
-├── Cargo.lock                    # Lock file versi dependensi
-├── .env                          # Konfigurasi environment
-├── start.sh                      # Build release + jalankan daemon background
-├── stop.sh                       # Hentikan daemon yang sedang berjalan
-├── server.log                    # Output log daemon backend
+├── .env                          # Konfigurasi environment utama
+├── start.sh / stop.sh            # Script utilitas build & run backend ke background
 ├── data.db                       # Database SQLite (dibuat otomatis)
 ├── docker-compose.yml            # Deployment frontend via Nginx/Podman
-├── Dockerfile.frontend           # Multi-stage build: Vite → Nginx Alpine
-├── static/                       # Output build Vue (dilayani backend sebagai fallback)
 │
 ├── src/
-│   ├── main.rs                   # Entry point: init state, CORS, route registration, server
+│   ├── main.rs                   # Entry point: init state, CORS, route merge grouping
 │   │
 │   ├── auth/
-│   │   ├── mod.rs
 │   │   ├── jwt.rs                # create_token(), verify_token(), struct Claims
-│   │   ├── jwt_middleware.rs     # jwt_auth_middleware + struct AuthUser(Claims)
-│   │   └── middleware.rs
+│   │   ├── jwt_middleware.rs     # jwt_auth_middleware + whitelist websocket/auth
+│   │   └── middleware.rs         # Middleware helper tambahan
 │   │
 │   ├── background/
-│   │   ├── mod.rs
-│   │   └── scheduler.rs          # Background: rekam metrics tiap 5 menit, alert anomali
+│   │   └── scheduler.rs          # Rekam metrics tiap 5 menit, alert anomali
 │   │
 │   ├── db/
-│   │   ├── mod.rs                # init_db(): buat koneksi pool, jalankan migrations
-│   │   ├── migrations.sql        # DDL 5 tabel utama
-│   │   └── migrations_cf.sql     # DDL tambahan Cloudflare (legacy/kosong)
+│   │   ├── mod.rs                # init_db(): pool config, eksekusi migrations.sql
+│   │   └── migrations.sql        # DDL untuk 5 tabel (termasuk cloudflare_cname_status)
 │   │
-│   ├── services/                 # Layer logika bisnis & OS wrapper
-│   │   ├── mod.rs
-│   │   ├── proc_reader.rs        # Baca /proc/stat, /proc/meminfo, /proc/uptime, OS info
-│   │   ├── network_info.rs       # Parse statistik network interface (rx/tx) + gateway
-│   │   ├── system_info.rs        # Info sistem umum (hostname, os_name, kernel, user)
-│   │   ├── process_info.rs       # Top process list via sysinfo
-│   │   ├── port_scanner.rs       # Parse /proc/net/tcp untuk listening ports
-│   │   ├── nmap_scanner.rs       # Jalankan nmap, simpan job ke DB, poll hasil
-│   │   ├── file_manager.rs       # resolve_path_safe(), check_write_permission(), list_directory()
-│   │   ├── compose_manager.rs    # Logic Docker/Podman Compose management
-│   │   ├── container_runtime.rs  # Deteksi runtime, list/create/action container
-│   │   ├── speedtest_cli.rs      # Jalankan speedtest-cli, parse hasil, simpan ke DB
-│   │   └── podman_cli.rs         # (Legacy) CLI wrapper Podman lama
+│   ├── services/                 # Layer logika bisnis & OS command wrapper
+│   │   ├── file_manager.rs       # resolve_path_safe(), check_write_permission()
+│   │   ├── network_info.rs       # Parse rx/tx + baca `ip route` untuk gateway
+│   │   ├── port_scanner.rs       # Parse `ss -tulnp` (extract PID, process, local/public scope)
+│   │   ├── proc_reader.rs        # Baca /etc/os-release, uptime, /proc/stat
+│   │   ├── speedtest_cli.rs      # Jalankan speedtest-cli via spawn_blocking + FIFO DB
+│   │   ├── compose_manager.rs    # Docker/Podman Compose management
+│   │   └── ... (nmap_scanner, container_runtime, process_info)
 │   │
-│   └── routes/                   # Layer HTTP handlers (24 modul)
-│       ├── mod.rs                # Ekspor semua modul
-│       ├── auth.rs               # Login via PAM, terbitkan JWT
-│       ├── network.rs            # Info network interface
-│       ├── container.rs          # Docker/Podman container management
-│       ├── compose.rs            # Docker/Podman Compose management
-│       ├── files.rs              # File manager: list, search, download, upload, actions
-│       ├── users_mgmt.rs         # User, group, SSH key management
-│       ├── services_mgmt.rs      # Systemd service management
+│   └── routes/                   # Layer HTTP handlers (26 modul)
+│       ├── auth.rs               # Login PAM, tolak root, wajib grup sudo/wheel
+│       ├── cloudflare.rs         # Status, install, create tunnel, ws logs
+│       ├── cloudflare_api.rs     # Config YAML (serde_yaml), DNS CNAME DB, health probe HTTP
+│       ├── disk.rs               # Parse `lsblk`, `df`, endpoint mount/umount USB
+│       ├── fail2ban.rs           # Status jails, manual ban/unban, config editor, baca log
+│       ├── files.rs              # File browse, download, upload, action, text read/write
+│       ├── firewall.rs           # Status UFW, toggle, add/delete rules
+│       ├── logs.rs               # Activity log dari DB, baca .bash_history
+│       ├── network.rs            # Info interface + gateway
+│       ├── ports.rs              # Listening ports, trigger nmap scan
+│       ├── process_mgmt.rs       # List proses, sudo_exec() helper stdin injection
+│       ├── speedtest.rs          # Ambil 5 riwayat terakhir, run test
 │       ├── syslogs.rs            # journalctl viewer
-│       ├── cron_mgmt.rs          # Crontab management root
-│       ├── process_mgmt.rs       # Top proses + kill + sudo_exec() helper
-│       ├── ports.rs              # Listening ports + nmap scan jobs
-│       ├── disk.rs               # Block device info (lsblk), mount/umount
-│       ├── speedtest.rs          # Speedtest runner + history dari DB
-│       ├── firewall.rs           # UFW firewall management
-│       ├── fail2ban.rs           # Fail2ban management (install, ban, unban, config, logs)
-│       ├── cloudflare.rs         # Cloudflared binary, tunnel, login, service, WS logs
-│       ├── cloudflare_api.rs     # Config YAML, routes, DNS CNAME, health check
-│       ├── logs.rs               # Activity log DB + bash history + log_activity() utility
-│       ├── metrics_ws.rs         # WebSocket live metrics (CPU, RAM, disk, net)
-│       ├── metrics_history.rs    # Historical metrics dari DB
-│       ├── system_mgmt.rs        # git pull + rebuild, reboot
-│       ├── system_updates.rs     # apt/pacman update check + upgrade WebSocket
-│       ├── terminal.rs           # Shellinabox handler
-│       ├── terminal_ws.rs        # WebSocket PTY terminal (portable-pty + bash)
-│       └── podman*.rs            # (Legacy) Podman endpoints lama
+│       ├── system_mgmt.rs        # Self-update dashboard, reboot
+│       ├── system_updates.rs     # Cek apt/pacman updates, WebSocket live upgrade
+│       ├── terminal_ws.rs        # WebSocket PTY terminal interaktif
+│       ├── users_mgmt.rs         # CRUD User/Group, chpasswd, manage SSH keys
+│       └── ... (cron, services, container, compose)
 │
 └── frontend-vue/
-    ├── package.json              # Dependensi NPM
-    ├── vite.config.js            # Vite: output ke ../static/, proxy ke :8080
     └── src/
-        ├── main.js               # Entry point Vue, mount app
-        ├── App.vue               # Root: global toast, dark mode provider
         ├── composables/
-        │   └── useApi.js         # apiFetch(): inject Authorization header otomatis, auto-logout on 401/sudo-fail
+        │   └── useApi.js         # Wrapper fetch: inject JWT, auto-logout jika 401 atau sudo fail
         ├── stores/
-        │   ├── serverStore.js    # Pinia: daftar server, JWT token per-server, active server
-        │   ├── themeStore.js     # Pinia: dark/light mode toggle
-        │   └── toastStore.js     # Pinia: toast notification + confirm dialog
+        │   ├── serverStore.js    # State multi-user session per server, OS name cache
+        │   └── toastStore.js     # Toast notification & confirmation modal
         ├── utils/
-        │   └── distro.js         # getDistroIcon(), getDistroColorClass() — mapping OS ke CDN icon
-        ├── components/
-        │   ├── NativeTerminal.vue    # xterm.js terminal over WebSocket
-        │   ├── LoginModal.vue        # Modal login server
-        │   ├── ToastAlert.vue        # Toast notification renderer
-        │   └── CloudflarePanel.vue   # Sub-komponen Cloudflare (legacy)
-        ├── router/
-        │   └── index.js          # Vue Router SPA routes
+        │   └── distro.js         # Helper: mapping OS name ke logo SVG SimpleIcons CDN
         └── views/
-            ├── HomeView.vue          # Daftar server dengan distro icon
-            ├── ServerLayout.vue      # Layout: navigasi + ping indicator + terminal button
-            ├── DashboardView.vue     # Live metrics + historical charts
-            ├── ContainerView.vue     # Container & Compose management (3 tab)
-            ├── FilesView.vue         # File manager (browse, search, grid/list/compact)
-            ├── UsersView.vue         # User & group & SSH key management (2 tab)
-            ├── ServicesView.vue      # Systemd services + process manager (2 tab)
-            ├── PortsView.vue         # Network, ports, speedtest, firewall, fail2ban
-            ├── CloudflareView.vue    # Cloudflare Tunnel Command Center (3 tab)
-            ├── SyslogsView.vue       # System logs (journal, activity, bash history)
-            ├── LogsView.vue          # Activity log dari database
-            ├── CronView.vue          # Cron job manager
-            ├── UpdatesView.vue       # OS update check + live upgrade terminal
-            ├── SettingsView.vue      # Pengaturan server & app
-            └── PodmanView.vue        # (Legacy) Podman view lama
+            ├── HomeView.vue          # Daftar server dengan ikon distro
+            ├── ServerLayout.vue      # Header dengan User Switcher Dropdown, Navigasi Tab, Ping Indicator
+            ├── DashboardView.vue     # Live metrics, chart historis, CPU/RAM progress
+            ├── ContainerView.vue     # Manajemen Docker/Podman (Containers, Compose, Deploy)
+            ├── FilesView.vue         # File Explorer 2.0 (Dual pane, USB sidebar, Read-only badges)
+            ├── UsersView.vue         # Manajemen Linux Users, OS Groups, dan SSH Keys (Modals)
+            ├── ServicesView.vue      # Systemd Services & Top Processes
+            ├── PortsView.vue         # Network Interfaces, Firewall, Fail2Ban Command Center, Scanner
+            ├── CloudflareView.vue    # Cloudflare Setup Wizard & 3-Tab Command Center (Routes, Health, Logs)
+            ├── SyslogsView.vue       # 3-Tab viewer: System Journal, Dashboard Activity, Bash History
+            ├── UpdatesView.vue       # UI OS Upgrade dengan WebSocket terminal
+            └── SettingsView.vue      # Pengaturan koneksi server
 ```
 
 ---
@@ -175,500 +135,105 @@ Dijalankan sekali saat startup via `background::scheduler::start_background_task
 | Variabel | Nilai Default | Keterangan |
 |----------|--------------|------------|
 | `PORT` | `8080` | Port HTTP backend |
-| `FILE_ROOT` | `$HOME` | Root direktori file manager. `$HOME` di-*expand* ke home OS user saat runtime |
+| `FILE_ROOT` | `$HOME` | Secara otomatis di-expand ke home direktori user yang sedang aktif pada session dashboard. Jangan gunakan absolute path kecuali ingin mengunci semua user ke folder yang sama. |
 | `DB_PATH` | `sqlite:./data.db` | Path file SQLite |
-| `JWT_SECRET` | *(tidak ada default aman)* | Secret untuk sign/verify JWT. **WAJIB diisi** di production. Generate: `openssl rand -hex 32` |
-
-**Variabel yang dibaca langsung dari environment OS (bukan `.env`):**
-- `HOME` — Home directory OS user, dipakai untuk path cert cloudflared dan `$HOME` expand
-- `USER` — Username OS aktif, dipakai untuk label di bash history viewer
+| `JWT_SECRET` | *(fallback)* | Secret untuk sign/verify JWT. **WAJIB diisi** di production. |
 
 ---
 
 ## 4. Skema Database (SQLite)
 
-Database dibuat otomatis via `src/db/migrations.sql` saat pertama kali backend dijalankan.
+Tabel dibuat otomatis via `src/db/migrations.sql`.
 
-### Tabel `system_metrics_history`
-Merekam data metrik sistem setiap 5 menit oleh background scheduler.
-```sql
-CREATE TABLE IF NOT EXISTS system_metrics_history (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp        TEXT NOT NULL,          -- ISO8601
-    cpu_usage        REAL NOT NULL,          -- Persentase 0-100
-    mem_used_bytes   INTEGER NOT NULL,
-    mem_total_bytes  INTEGER NOT NULL,
-    disk_used_bytes  INTEGER DEFAULT 0,
-    disk_total_bytes INTEGER DEFAULT 0,
-    net_rx_bytes     INTEGER DEFAULT 0,      -- Kumulatif bytes diterima
-    net_tx_bytes     INTEGER DEFAULT 0       -- Kumulatif bytes dikirim
-);
-```
-
-### Tabel `speedtest_history`
-Menyimpan hasil internet speed test.
-```sql
-CREATE TABLE IF NOT EXISTS speedtest_history (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    tested_at     TEXT NOT NULL,    -- ISO8601
-    download_mbps REAL,
-    upload_mbps   REAL,
-    ping_ms       REAL,
-    server_name   TEXT
-);
-```
-
-### Tabel `port_scan_jobs`
-Job queue untuk nmap scan async.
-```sql
-CREATE TABLE IF NOT EXISTS port_scan_jobs (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    target      TEXT NOT NULL,
-    status      TEXT NOT NULL,   -- pending | running | done | failed
-    started_at  TEXT,
-    finished_at TEXT,
-    result_json TEXT             -- JSON string hasil scan
-);
-```
-
-### Tabel `activity_log`
-Audit trail semua aksi admin via dashboard + alert anomali dari scheduler.
-```sql
-CREATE TABLE IF NOT EXISTS activity_log (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    level     TEXT NOT NULL DEFAULT 'INFO',  -- INFO | WARNING | CRITICAL
-    action    TEXT NOT NULL,                 -- e.g. "Firewall Toggle", "Fail2Ban Ban"
-    detail    TEXT                           -- Deskripsi detail
-);
-```
-
-### Tabel `cloudflare_cname_status`
-Status lokal registrasi DNS CNAME. Dipakai agar status CNAME langsung hijau tanpa menunggu propagasi DNS.
-```sql
-CREATE TABLE IF NOT EXISTS cloudflare_cname_status (
-    hostname     TEXT PRIMARY KEY,
-    tunnel_name  TEXT NOT NULL,
-    is_active    BOOLEAN NOT NULL DEFAULT 1,
-    added_at     TEXT NOT NULL    -- ISO8601
-);
-```
-
-### Migrasi Incremental (`src/db/mod.rs`)
-Beberapa kolom ditambahkan secara incremental (karena SQLite tidak mendukung `IF NOT EXISTS` pada `ALTER TABLE`):
-- `activity_log.level` — ditambahkan via `pragma_table_info` check
-- `system_metrics_history.disk_used_bytes`, `disk_total_bytes`, `net_rx_bytes`, `net_tx_bytes` — sama
+1. **`system_metrics_history`**: CPU, RAM, Disk, Net_RX/TX direkam tiap 5 menit oleh scheduler.
+2. **`speedtest_history`**: History uji kecepatan. Menggunakan logika FIFO (menghapus data lama otomatis, hanya menyimpan 5 data terbaru).
+3. **`port_scan_jobs`**: Job queue nmap scan async.
+4. **`activity_log`**: Audit trail. Fungsi `log_activity(pool, level, action, detail)` dipanggil setiap kali terjadi perubahan sistem (User add, FW toggle, Tunnel delete, dll). Ditampilkan di Tab Dashboard Activity.
+5. **`cloudflare_cname_status`**: Mencatat CNAME DNS yang didaftarkan manual. Digunakan agar status di UI langsung 'Active' (Hijau) tanpa harus menunggu propagasi query DNS yang sering *pending*.
 
 ---
 
-## 5. Keamanan & Prinsip Penting
+## 5. Konsep Keamanan & Prinsip Kerja
 
-### Aturan yang Harus Selalu Dipatuhi
+### 5.1 Multi-User Dashboard Sessions
+- Dashboard tidak memiliki database pengguna internal. Semua login diverifikasi langsung ke OS via **PAM**.
+- **Validasi Ketat**: Backend menolak login jika username adalah `root`. Backend mengeksekusi `groups <username>` untuk memastikan pengguna berada di grup `sudo` atau `wheel`.
+- **JWT Storage**: Frontend `serverStore.js` mampu menyimpan banyak token untuk satu server (e.g. user `infratek` dan `webmaster`). Pengguna bisa beralih (switch) user via dropdown di header tanpa perlu memasukkan password berulang kali.
+- **Auto-Logout**: Jika `sudo_exec()` mereturn error `"sudo: authentication failed"`, `useApi.js` di frontend akan menangkapnya, menghapus token user tersebut, men-switch ke user lain (jika ada), atau menendang ke layar login.
 
-1. **Jangan pernah gunakan `sh -c` dengan string input dari user secara langsung.**
-   Gunakan selalu `std::process::Command::new("...").args([...])` dengan argumen terpisah. Pengecualian hanya untuk string yang sudah di-sanitize ketat dan tidak mengandung input dinamis.
+### 5.2 Zona Izin File Explorer (File Explorer 2.0)
+- Navigasi filesystem terbuka dari root `/` (*read-only*).
+- Operasi modifikasi (*Write, Upload, Delete, Move, Chmod*) wajib divalidasi oleh `check_write_permission()`.
+- Izin Write hanya diberikan jika target berada di dalam `FILE_ROOT` (yang telah di-expand ke `/home/<username>`) **ATAU** berada di dalam *removable mount points* (`/media/` atau `/mnt/` yang terdeteksi via `/proc/mounts`).
+- Mode *List, Grid (Image Thumbnails),* dan *Compact* didukung penuh.
 
-2. **Path traversal protection di File Manager.**
-   Fungsi `resolve_path_safe()` di `src/services/file_manager.rs` memvalidasi path via `canonicalize()`. Jangan pernah bypass ini.
+### 5.3 Sudo Execution & Blocking Threads
+- Fungsi `sudo_exec()` membungkus `Command::new("sudo")` dan menginjeksikan password dari JWT secara aman via saluran *stdin* (piped).
+- Karena eksekusi OS (*apt, pacman, cloudflared, speedtest*) memblokir thread, operasi ini wajib dibungkus di dalam `tokio::task::spawn_blocking(...)`.
+- Kegagalan membungkus perintah yang memakan waktu lama (seperti speedtest 30 detik) ke dalam `spawn_blocking` akan menyebabkan seluruh *async executor runtime Tokio* hang (termasuk Ping dan WebSocket).
 
-3. **Write permission check di File Manager.**
-   Fungsi `check_write_permission()` memastikan write hanya diizinkan di `FILE_ROOT` (home) dan removable mount points. Endpoint write wajib memanggil ini sebelum eksekusi.
+### 5.4 Live Logs & Websocket Terminal
+Ada empat (4) endpoint WebSocket yang mendesain PTY atau mem-pipe stdout/stderr:
+1. `/api/terminal/ws` — Native Bash PTY
+2. `/api/metrics/ws` — Streaming loop sysinfo tiap 3 detik
+3. `/api/cloudflare/logs/ws` — Pipe `journalctl -u cloudflared -f`
+4. `/api/system/os_updates/ws` — Pipe `apt-get upgrade` (stdout & stderr merged via `tokio::select!`)
 
-4. **JWT Secret di production.**
-   `JWT_SECRET` harus di-set ke nilai acak yang kuat. Default fallback `"changeme-jwt-secret"` **tidak aman** untuk production.
+*WebSocket membutuhkan `?token=...` query param karena browser API tidak mendukung custom header pada handshake.*
 
-5. **Jangan expose port backend ke internet tanpa TLS.**
-   Backend tidak mengimplementasikan TLS sendiri. Gunakan reverse proxy (Nginx/Caddy) dengan HTTPS di production.
-
-6. **CORS saat ini menggunakan `Any`** untuk kemudahan pengembangan. Pertimbangkan membatasi origin di production.
-
-### Mekanisme Auto-Logout
-
-Di `frontend-vue/src/composables/useApi.js`, fungsi `apiFetch()` menginspeksi respons:
-- Jika status `401` → hapus token, redirect ke `/`
-- Jika status `500` dan body mengandung string `"sudo: authentication failed"` → sama dengan 401
-
-Ini mencegah pengguna yang token-nya kadaluarsa terus mendapat error misterius.
-
-### Sudo Injection
-
-Helper `sudo_exec()` di `src/routes/process_mgmt.rs`:
-```rust
-pub fn sudo_exec(password: &str, args: &[&str]) -> std::io::Result<Output> {
-    let mut child = Command::new("sudo")
-        .arg("-S")    // Baca password dari stdin
-        .arg("-p").arg("")  // Kosongkan prompt
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    if let Some(stdin) = child.stdin.as_mut() {
-        let _ = stdin.write_all(format!("{}\n", password).as_bytes());
-    }
-    child.wait_with_output()
-}
-```
-Password diinjeksikan via stdin, **tidak pernah disimpan ke disk**, tidak pernah dikembalikan ke frontend, dan tidak pernah dilog.
+### 5.5 Fail2Ban & UFW (Security)
+- **UFW**: Backend melakukan parsing teks statis dari output `ufw status`. Aksi (allow/deny) diinjeksi via CLI.
+- **Fail2Ban**:
+  - Konfigurasi `jail.local` di-parse secara manual menggunakan INI-style reader sederhana di Rust.
+  - Endpoint `register` ban/unban memanipulasi memory daemon menggunakan `fail2ban-client`.
+  - UI Frontend memiliki katalog *Quick Add* untuk setup service populer (Nginx, Postfix, dll) dengan parameter default.
 
 ---
 
-## 6. Cara Kerja Fitur Utama
+## 6. Referensi Endpoint API
 
-### 6.1 Autentikasi & Sesi
+**(Seluruh endpoint kecuali `/api/ping` dan `/api/auth/*` membutuhkan JWT Bearer Token)**
 
-1. User kirim `POST /api/auth/login` dengan `{ username, password }`
-2. Backend verifikasi via PAM (`libpam`) — ini adalah autentikasi PAM Linux sungguhan
-3. Jika berhasil, backend buat JWT token yang berisi `sub` (username) dan `pwd` (password) — password dienkripsi di dalam JWT payload
-4. Frontend simpan token di `sessionStorage` per server ID
-5. Setiap request selanjutnya, `apiFetch()` menyertakan `Authorization: Bearer <token>`
-6. `jwt_auth_middleware` memverifikasi token dan mengekstrak `Claims` yang berisi password
-7. Handler yang butuh sudo mengambil `auth.0.pwd` dari `Claims` untuk `sudo_exec()`
-
-> **Catatan penting:** Password user disimpan di dalam JWT token agar handler bisa melakukan `sudo`. Ini adalah trade-off desain yang disengaja — memungkinkan autentikasi sekali (login) tapi bisa menjalankan `sudo` di setiap request berikutnya. Akibatnya: **JWT Secret harus kuat**, dan **HTTPS wajib di production** agar token tidak bisa dicegat.
-
-### 6.2 Streaming Metrics via WebSocket
-
-Handler `metrics_ws_handler`:
-1. Upgrade koneksi HTTP ke WebSocket
-2. Spawn loop async yang berjalan setiap 3 detik
-3. Setiap iterasi: lock `AppState.sys`, refresh sysinfo, baca `/proc/stat`, `/proc/meminfo`, `/proc/net/dev`
-4. Serialize ke JSON, kirim via `socket.send(Message::Text(...))`
-5. Jika `socket.recv()` menerima `Close` atau `None` → break loop
-
-### 6.3 File Manager — Sistem Permission
-
-Dua fungsi kunci di `src/services/file_manager.rs`:
-
-**`resolve_path_safe(requested_path)`** — Validasi dan resolve path:
-- Tolak path yang mengandung null byte
-- Gunakan `Path::canonicalize()` untuk mendapat absolute path
-- Tidak ada batasan ke FILE_ROOT — seluruh filesystem dapat diakses untuk *read*
-
-**`check_write_permission(path, home_root, removable_mounts)`** — Cek izin write:
-- Return `true` jika path berada di dalam `home_root` (FILE_ROOT)
-- Return `true` jika path berada di dalam salah satu removable mount point (`/media/`, `/mnt/`)
-- Return `false` untuk semua path lainnya
-
-Semua endpoint *write* (`upload`, `file_action` dengan modifikasi, `text_file` mode write, `fetch_url`) **wajib** memanggil `check_write_permission()` sebelum eksekusi.
-
-### 6.4 Cloudflare Tunnel — Alur Setup
-
-```
-Install cloudflared binary
-        ↓
-Run `cloudflared tunnel login`
-Backend: spawn process, capture stderr, cari URL "https://dash.cloudflare.com"
-Frontend: tampilkan URL untuk dibuka user di browser, polling /api/cloudflare/login/status
-        ↓
-User authorize di browser → cert.pem tersimpan di ~/.cloudflared/cert.pem
-        ↓
-Create tunnel: `cloudflared tunnel create <name>`
-Backend: cp credentials .json ke /etc/cloudflared/, tulis config.yml awal,
-         jalankan `cloudflared service install`, `systemctl enable`, `systemctl start`
-        ↓
-Tunnel aktif. User tambah route via UI.
-        ↓
-Add Route: update config.yml + restart service
-        ↓
-Register DNS CNAME: `cloudflared tunnel route dns <tunnel> <hostname>`
-Backend: simpan status ke tabel `cloudflare_cname_status` jika berhasil
-        ↓
-Health Check: HTTP probe ke setiap hostname, klasifikasikan: HEALTHY / ERR_502 / ERR_1033 / NXDOMAIN
-```
-
-### 6.5 Activity Log (Audit Trail)
-
-Fungsi utility `log_activity()` di `src/routes/logs.rs`:
-```rust
-pub async fn log_activity(pool: &SqlitePool, level: &str, action: &str, detail: &str) {
-    let now = chrono::Utc::now().to_rfc3339();
-    let _ = sqlx::query("INSERT INTO activity_log ...")
-        .bind(now).bind(level).bind(action).bind(detail)
-        .execute(pool).await;
-}
-```
-Dipanggil dari berbagai route setelah operasi berhasil. Contoh:
-- Firewall toggle → level `WARNING`
-- Create user → level `INFO`
-- Delete tunnel → level `WARNING`
-- System reboot → level `CRITICAL`
-- OS upgrade → level `WARNING`
-
-### 6.6 Distro Icon System
-
-File `frontend-vue/src/utils/distro.js`:
-- Fungsi `getDistroIcon(osName)` memetakan string `os_name` (dari `/etc/os-release PRETTY_NAME`) ke URL ikon di `cdn.simpleicons.org`
-- Fungsi `getDistroColorClass(osName)` mengembalikan kelas Tailwind untuk background
-- `os_name` disimpan ke `localStorage` via `serverStore.setServerOsName()` saat pertama kali WebSocket metrics menerima data
-- Distro yang didukung: Ubuntu, Debian, CachyOS, Manjaro, Arch Linux, Fedora, CentOS, RHEL, openSUSE, Alpine, Linux Mint, Kali, Raspberry Pi, NixOS, Rocky, AlmaLinux
+| Modul | Endpoint | Method | Keterangan |
+|-------|----------|--------|------------|
+| **Auth** | `/api/auth/login` | POST | PAM auth, return JWT |
+| **System** | `/api/metrics/ws` | GET | WS Live metrics |
+| | `/api/metrics/history` | GET | DB metrics (24h) |
+| | `/api/system/update` | POST | Self-update (git pull) |
+| | `/api/system/reboot` | POST | OS reboot |
+| | `/api/system/os_updates` | GET | APT/Pacman list upgradable |
+| | `/api/system/os_updates/ws`| GET | WS Live OS upgrade |
+| **Network** | `/api/ping` | GET | (Public) Fast latency check |
+| | `/api/network` | GET | Interfaces, IPs, Gateway, Rx/Tx |
+| | `/api/ports` | GET | Listening ports + scope (public/local) |
+| | `/api/speedtest/*` | GET/POST | History (limit 5) / Run test |
+| **Security** | `/api/firewall/*` | GET/POST | UFW status, toggle, rule |
+| | `/api/fail2ban/status` | GET | Active jails + Banned IPs |
+| | `/api/fail2ban/ban` | POST | Manual ban IP |
+| | `/api/fail2ban/unban` | POST | Manual unban IP |
+| | `/api/fail2ban/config` | GET/POST | Editor `jail.local` |
+| | `/api/fail2ban/config/{name}`| DELETE | Hapus blok jail dari file |
+| | `/api/fail2ban/logs` | GET | Tail `/var/log/fail2ban.log` |
+| **Cloudflare**| `/api/cloudflare/status` | GET | Status, service_uptime_secs |
+| | `/api/cloudflare/create` | POST | Create tunnel |
+| | `/api/cloudflare/routes` | POST/DEL | Add/Remove ingress rules |
+| | `/api/cloudflare/routes/dns` | POST | Register CNAME via CLI, save to DB |
+| | `/api/cloudflare/health` | GET | E2E HTTP probe (502, 1033, NXDOMAIN) |
+| | `/api/cloudflare/logs/ws` | GET | WS Live `journalctl -f` |
+| **Files** | `/api/files/config` | GET | Return expanded home_root user aktif |
+| | `/api/files/search` | GET | Recursive `find` maxdepth 8 |
+| | `/api/files/action` | POST | rename, move, copy, compress, chmod |
+| | `/api/files/info` | GET | Owner, modified_at, size, sym-perms |
+| **Disk** | `/api/disk/info` | GET | Parse `lsblk -J` + `df` |
+| | `/api/disk/mount` | POST | Mount removable to `/media/` |
+| **Users** | `/api/users` | GET/POST | List, Create user (`useradd`) |
+| | `/api/users/{u}/password` | PUT | `chpasswd` (piped sh -c) |
+| | `/api/users/{u}/groups` | PUT | `usermod -G` |
+| | `/api/users/{u}/ssh` | GET/POST | Manage `authorized_keys` |
+| | `/api/groups` | GET/POST | List, Create, Delete Linux groups |
+| **Logs** | `/api/syslogs` | GET | `journalctl` (all/auth/kernel) |
+| | `/api/logs/activity` | GET | DB Activity log (Audit trail) |
+| | `/api/logs/bash_history` | GET | Baca `.bash_history` user aktif & root |
 
 ---
-
-## 7. Referensi API Lengkap
-
-### Endpoint Public
-| Method | Path | Deskripsi |
-|--------|------|-----------|
-| GET | `/api/ping` | Health check, return "pong" |
-| POST | `/api/auth/login` | Login PAM, return JWT |
-
-### Metrics & System
-| Method | Path | Deskripsi |
-|--------|------|-----------|
-| GET WS | `/api/metrics/ws` | Live metrics tiap 3 detik |
-| GET | `/api/metrics/history` | Riwayat 24 jam dari DB |
-| GET | `/api/syslogs?filter=all\|auth\|kernel` | Journal logs |
-| GET | `/api/process/list` | Top proses |
-| POST | `/api/process/kill/{pid}` | Kill proses |
-| GET | `/api/services` | List systemd services |
-| POST | `/api/services/action` | Aksi service |
-| GET | `/api/cron` | Read crontab root |
-| POST | `/api/cron` | Update crontab root |
-| POST | `/api/system/update` | git pull + rebuild |
-| POST | `/api/system/reboot` | Reboot server |
-| GET | `/api/system/os_updates` | Cek OS updates |
-| GET WS | `/api/system/os_updates/ws` | Live upgrade stream |
-| GET | `/api/logs/activity` | 200 activity log terakhir |
-| GET | `/api/logs/bash_history` | Bash history root + user |
-
-### Network & Security
-| Method | Path | Deskripsi |
-|--------|------|-----------|
-| GET | `/api/network` | Info interface + gateway |
-| GET | `/api/ports` | Listening ports |
-| POST | `/api/ports/scan` | Trigger nmap scan |
-| GET | `/api/ports/scan/{job_id}` | Status nmap scan |
-| GET | `/api/firewall/status` | Status UFW |
-| POST | `/api/firewall/toggle` | Toggle UFW |
-| POST | `/api/firewall/rule` | Tambah/hapus UFW rule |
-| GET | `/api/speedtest/history` | Riwayat speedtest |
-| POST | `/api/speedtest/run` | Jalankan speedtest |
-
-### Fail2Ban
-| Method | Path | Deskripsi |
-|--------|------|-----------|
-| GET | `/api/fail2ban/status` | Status + banned IPs |
-| POST | `/api/fail2ban/install` | Install fail2ban |
-| POST | `/api/fail2ban/ban` | Ban IP manual |
-| POST | `/api/fail2ban/unban` | Unban IP |
-| GET | `/api/fail2ban/logs` | Log fail2ban |
-| GET | `/api/fail2ban/config` | Baca jail.local |
-| POST | `/api/fail2ban/config` | Simpan jail config |
-| DELETE | `/api/fail2ban/config/{name}` | Hapus jail |
-| GET | `/api/fail2ban/filters` | List filter.d |
-
-### File Manager
-| Method | Path | Deskripsi |
-|--------|------|-----------|
-| GET | `/api/files/config` | home_root + system_root |
-| GET | `/api/files/list?path=` | List direktori |
-| GET | `/api/files/search?path=&query=` | Cari file (max 500 hasil, depth 8) |
-| GET | `/api/files/download?path=` | Download file |
-| POST | `/api/files/upload?path=` | Upload file (multipart) |
-| POST | `/api/files/fetch` | Download URL via wget |
-| POST | `/api/files/action` | rename/move/copy/delete/compress/extract/chmod |
-| POST | `/api/files/text` | Read/write teks |
-| GET | `/api/files/info?path=` | Metadata file |
-| GET | `/api/disk/info` | Block device (lsblk + df) |
-| POST | `/api/disk/mount` | Mount device |
-| POST | `/api/disk/umount` | Unmount device |
-
-### Users & Groups & SSH
-| Method | Path | Deskripsi |
-|--------|------|-----------|
-| GET | `/api/users` | List user Linux |
-| POST | `/api/users` | Buat user |
-| PUT | `/api/users/{u}/password` | Ganti password |
-| PUT | `/api/users/{u}/groups` | Update groups |
-| DELETE | `/api/users/{u}?remove_home=` | Hapus user |
-| GET | `/api/users/{u}/ssh` | List SSH keys |
-| POST | `/api/users/{u}/ssh` | Tambah SSH key |
-| DELETE | `/api/users/{u}/ssh` | Hapus SSH key |
-| GET | `/api/groups` | List grup |
-| POST | `/api/groups` | Buat grup |
-| DELETE | `/api/groups/{name}` | Hapus grup |
-
-### Cloudflare Tunnel
-| Method | Path | Deskripsi |
-|--------|------|-----------|
-| GET | `/api/cloudflare/status` | Status lengkap tunnel |
-| POST | `/api/cloudflare/install` | Install cloudflared |
-| POST | `/api/cloudflare/login` | Start login, capture URL |
-| GET | `/api/cloudflare/login/status` | Poll cert.pem |
-| POST | `/api/cloudflare/create` | Buat tunnel |
-| DELETE | `/api/cloudflare/tunnel` | Hapus tunnel |
-| POST | `/api/cloudflare/start` | Start service |
-| POST | `/api/cloudflare/stop` | Stop service |
-| POST | `/api/cloudflare/restart` | Restart service |
-| GET | `/api/cloudflare/config` | Baca config.yml + CNAME status |
-| POST | `/api/cloudflare/routes` | Tambah ingress route |
-| DELETE | `/api/cloudflare/routes` | Hapus ingress route |
-| POST | `/api/cloudflare/routes/dns` | Register DNS CNAME |
-| GET | `/api/cloudflare/health` | HTTP probe semua hostname |
-| GET | `/api/cloudflare/logs` | Log journalctl 100 baris |
-| GET WS | `/api/cloudflare/logs/ws` | Live log stream |
-
-### Container & Compose
-| Method | Path | Deskripsi |
-|--------|------|-----------|
-| GET | `/api/container/runtime` | Runtime terdeteksi |
-| POST | `/api/container/runtime/refresh` | Re-detect runtime |
-| GET | `/api/container/list` | List container |
-| POST | `/api/container/create` | Buat container |
-| POST | `/api/container/{action}/{id}` | Aksi container |
-| GET | `/api/container/inspect/{id}` | Inspect container |
-| GET | `/api/container/logs/{id}?tail=` | Log container |
-| GET | `/api/compose/projects` | List compose project |
-| POST | `/api/compose/deploy` | Deploy project |
-| POST | `/api/compose/{name}/stop` | Stop project |
-| POST | `/api/compose/{name}/restart` | Restart project |
-| POST | `/api/compose/{name}/rebuild` | Rebuild project |
-| GET | `/api/compose/{name}/ps` | Status per-service |
-| GET | `/api/compose/{name}/logs?service=&tail=` | Log project |
-| POST | `/api/compose/{name}/scale` | Scale service |
-| GET | `/api/compose/{name}/yaml` | Ambil YAML |
-| PUT | `/api/compose/{name}/yaml` | Update YAML + redeploy |
-| DELETE | `/api/compose/{name}` | Hapus project |
-
-### Terminal
-| Method | Path | Deskripsi |
-|--------|------|-----------|
-| GET WS | `/api/terminal/ws` | Interactive PTY terminal |
-| POST | `/api/terminal/start` | Start shellinabox di port 4200 |
-
----
-
-## 8. Dependensi Rust (Cargo.toml)
-
-| Crate | Versi | Kegunaan |
-|-------|-------|---------|
-| `axum` | 0.8.9 | Web framework (HTTP + WebSocket + Multipart) |
-| `tokio` | 1.53.1 | Async runtime (full features: fs, io-util, dll) |
-| `sqlx` | 0.9.0 | SQLite async (features: sqlite, runtime-tokio, chrono) |
-| `serde` | 1.0.229 | Serialisasi/deserialisasi JSON & YAML |
-| `serde_json` | 1.0.151 | JSON parsing dan generation |
-| `serde_yaml` | 0.9 | YAML parsing (untuk cloudflare config.yml) |
-| `pam` | 0.8 | Autentikasi Linux PAM |
-| `jsonwebtoken` | 9 | JWT sign & verify |
-| `argon2` | 0.5.3 | Hashing password |
-| `chrono` | 0.4.45 | Date/time (features: serde) |
-| `dotenvy` | 0.15.7 | Load file `.env` |
-| `sysinfo` | 0.39.6 | Info CPU, RAM, disk, proses, network |
-| `portable-pty` | 0.9.0 | PTY untuk terminal WebSocket |
-| `reqwest` | 0.13.4 | HTTP client async (health probe, wget via server) |
-| `rustls` | 0.23 | TLS pure-Rust (features: ring, std) |
-| `ring` | 0.17 | Kriptografi untuk rustls |
-| `futures-util` | 0.3.34 | Utilities async/futures |
-| `tokio-stream` | 0.1.19 | Stream utilities (features: sync) |
-| `tokio-util` | 0.7.19 | IO adapter (features: io) — ReaderStream |
-| `tower` | 0.5.3 | Middleware layer untuk Axum |
-| `tower-http` | 0.7.0 | Static file serving, CORS, trace |
-| `tracing` | 0.1.44 | Structured logging |
-| `tracing-subscriber` | 0.3.23 | Output tracing ke stdout |
-| `uuid` | 1.26.0 | Generate UUID v4 |
-| `rust-embed` | 8.12.0 | Embed file statis ke binary |
-| `libc` | 0.2 | Binding ke C library Linux |
-| `axum-auth` | 0.8.1 | Auth helper untuk Axum |
-
----
-
-## 9. Dependensi Frontend (package.json)
-
-### Runtime Dependencies
-| Package | Versi | Kegunaan |
-|---------|-------|---------|
-| `vue` | ^3.5.40 | Framework Vue 3 (Composition API) |
-| `vue-router` | ^5.2.0 | SPA routing |
-| `@vueuse/core` | ^14.4.0 | Composable utilities (useStorage, dll) |
-| `tailwindcss` | ^4.3.3 | Utility-first CSS framework |
-| `@tailwindcss/vite` | ^4.3.3 | Integrasi Tailwind v4 dengan Vite |
-| `lucide-vue-next` | ^1.0.0 | Icon components (700+ ikon) |
-| `@lucide/vue` | ^1.34.0 | Icon library alias |
-| `chart.js` | ^4.5.1 | Charting library |
-| `vue-chartjs` | ^5.3.4 | Wrapper Vue untuk Chart.js |
-| `@xterm/xterm` | ^6.0.0 | Terminal emulator (WebSocket PTY) |
-| `@xterm/addon-fit` | ^0.11.0 | Auto-resize terminal ke container |
-
-### Dev Dependencies
-| Package | Versi | Kegunaan |
-|---------|-------|---------|
-| `vite` | ^8.1.5 | Build tool & dev server |
-| `@vitejs/plugin-vue` | ^6.0.8 | Plugin Vite untuk `.vue` SFC |
-| `typescript` | ~6.0.0 | TypeScript compiler |
-| `vue-tsc` | ^3.3.7 | Type checking Vue SFC |
-| `npm-run-all2` | ^9.0.2 | Jalankan beberapa npm script |
-
-**Node.js version requirement:** `^22.18.0 || >=24.12.0`
-
----
-
-## 10. Build & Deployment Flow
-
-### Backend Build
-```bash
-# Development
-cargo run
-
-# Production (dipanggil otomatis oleh start.sh)
-cargo build --release
-./target/release/infoinserver
-```
-
-### Frontend Build
-```bash
-cd frontend-vue
-npm install
-
-# Development (hot-reload, proxy ke :8080)
-npm run dev
-
-# Production build (output ke ../static/)
-npm run build
-```
-
-### `start.sh` — Apa yang Terjadi
-1. Jalankan `cargo build --release`
-2. Stop instance lama (jika ada) via PID file atau `pkill`
-3. Spawn binary baru sebagai daemon background
-4. Tulis output ke `server.log`
-5. Aplikasi startup: load `.env`, inisialisasi DB (jalankan migrations), start scheduler, bind ke `PORT`
-
-### Deployment Database
-Migrasi SQL dijalankan **otomatis** setiap startup via `src/db/mod.rs`:
-```rust
-let migration_sql = include_str!("migrations.sql");
-sqlx::query(migration_sql).execute(&pool).await?;
-```
-File `migrations.sql` menggunakan `CREATE TABLE IF NOT EXISTS` sehingga aman dijalankan berulang kali.
-
----
-
-## 11. Catatan Pengembangan
-
-### Menambah Route Baru
-1. Buat handler di file `src/routes/` yang relevan (atau buat file baru)
-2. Tambahkan ke `src/routes/mod.rs` sebagai `pub mod nama_modul;`
-3. Daftarkan route di `src/main.rs` ke blok router yang sesuai:
-   - Tanpa state: ke `stateless_routes`
-   - Dengan `AppState`: ke `app_routes`
-   - Dengan `ContainerState`: ke `container_routes`
-   - Dengan `Networks`: ke `network_routes`
-
-### Menambah Tabel Database Baru
-1. Tambahkan DDL `CREATE TABLE IF NOT EXISTS ...` ke `src/db/migrations.sql`
-2. Jika menambahkan kolom ke tabel existing, tambahkan logic incremental di `src/db/mod.rs` karena SQLite tidak mendukung `ALTER TABLE IF NOT EXISTS`
-
-### Menambah Halaman Frontend Baru
-1. Buat file `frontend-vue/src/views/NamaView.vue`
-2. Import dan daftarkan di `frontend-vue/src/router/index.js`
-3. Tambahkan link navigasi di `frontend-vue/src/views/ServerLayout.vue`
-4. Import ikon yang dibutuhkan dari `lucide-vue-next`
-
-### Konvensi Error Handling Backend
-- Handler yang return `Result<Json<T>, (StatusCode, String)>` — paling umum
-- Handler yang return `Result<Json<T>, (StatusCode, Json<Value>)>` — untuk handler lama (users_mgmt, dll)
-- Selalu gunakan `map_err` untuk propagate error dengan status code yang tepat
-- Gunakan `StatusCode::FORBIDDEN` untuk akses ditolak (path traversal, write ke read-only)
-- Gunakan `StatusCode::BAD_REQUEST` untuk input tidak valid
-- Gunakan `StatusCode::INTERNAL_SERVER_ERROR` untuk kegagalan OS command
+*Dokumentasi ini otomatis merefleksikan status codebase per pembaruan terakhir. Pastikan untuk memperbarui dokumen ini jika ada penambahan rute atau modifikasi tabel DB baru.*

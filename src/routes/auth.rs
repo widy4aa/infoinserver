@@ -1,5 +1,6 @@
 // src/routes/auth.rs
 // POST /api/auth/login — verifikasi password Linux user via PAM, return JWT
+// Hanya mengizinkan user non-root yang terdaftar di grup sudo/wheel
 
 use axum::{Json, http::StatusCode};
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,22 @@ pub struct LoginResponse {
     pub username: String,
 }
 
+/// Cek apakah user terdaftar di grup sudo atau wheel
+fn is_sudo_user(username: &str) -> bool {
+    // Gunakan `groups <username>` untuk mendapatkan daftar grup user
+    let output = std::process::Command::new("groups")
+        .arg(username)
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let groups = String::from_utf8_lossy(&out.stdout);
+            groups.contains("sudo") || groups.contains("wheel")
+        }
+        _ => false,
+    }
+}
+
 pub async fn login_handler(
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<serde_json::Value>)> {
@@ -28,6 +45,14 @@ pub async fn login_handler(
         return Err((
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "error": "Username and password required" })),
+        ));
+    }
+
+    // Tolak login sebagai root — gunakan user non-root dengan sudo
+    if username == "root" {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Login as root is not allowed. Use a non-root user with sudo privileges." })),
         ));
     }
 
@@ -56,6 +81,20 @@ pub async fn login_handler(
         return Err((
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": "Invalid username or password" })),
+        ));
+    }
+
+    // Verifikasi bahwa user terdaftar di grup sudo atau wheel
+    // (dilakukan setelah PAM sukses agar tidak bocorkan info grup sebelum auth)
+    let username_clone = username.clone();
+    let has_sudo = tokio::task::spawn_blocking(move || is_sudo_user(&username_clone))
+        .await
+        .unwrap_or(false);
+
+    if !has_sudo {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Access denied. Only users with sudo/wheel privileges can access this dashboard." })),
         ));
     }
 
