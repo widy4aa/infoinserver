@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 use sqlx::SqlitePool;
 use chrono::Utc;
 
@@ -12,11 +11,19 @@ pub struct SpeedtestResult {
 }
 
 pub async fn run_speedtest(db_pool: &SqlitePool) -> Result<SpeedtestResult, String> {
-    // Pastikan speedtest-cli terinstal di OS: `sudo apt install speedtest-cli`
-    let output = Command::new("speedtest-cli")
-        .args(["--json"])
-        .output()
-        .map_err(|e| format!("Failed to execute speedtest-cli: {}", e))?;
+    // Jalankan speedtest-cli di thread pool terpisah (spawn_blocking) agar
+    // tidak memblokir Tokio's async runtime. Tanpa ini, seluruh dashboard akan
+    // freeze selama speedtest berjalan (30-120 detik) karena blocking
+    // std::process::Command menyita executor thread dan mencegah request lain
+    // (ping, WebSocket metrics, dll.) diproses.
+    let output = tokio::task::spawn_blocking(|| {
+        std::process::Command::new("speedtest-cli")
+            .args(["--json"])
+            .output()
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+    .map_err(|e| format!("Failed to execute speedtest-cli: {}", e))?;
 
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
