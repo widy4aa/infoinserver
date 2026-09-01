@@ -53,5 +53,12 @@ pub async fn run_speedtest(db_pool: &SqlitePool) -> Result<SpeedtestResult, Stri
     .await
     .map_err(|e| format!("DB Insert error: {}", e))?;
 
+    // Pertahankan hanya 5 data terakhir (FIFO — hapus yang lebih lama)
+    let _ = sqlx::query(
+        "DELETE FROM speedtest_history WHERE id NOT IN (SELECT id FROM speedtest_history ORDER BY id DESC LIMIT 5)"
+    )
+    .execute(db_pool)
+    .await;
+
     Ok(result)
 }

@@ -16,7 +16,7 @@ pub struct SpeedtestHistoryRow {
 
 pub async fn get_history_handler(State(state): State<AppState>) -> Result<Json<Vec<SpeedtestHistoryRow>>, (StatusCode, String)> {
     let rows = sqlx::query_as::<_, SpeedtestHistoryRow>(
-        "SELECT id, tested_at, download_mbps, upload_mbps, ping_ms, server_name FROM speedtest_history ORDER BY id DESC LIMIT 20"
+        "SELECT id, tested_at, download_mbps, upload_mbps, ping_ms, server_name FROM speedtest_history ORDER BY id DESC LIMIT 5"
     )
     .fetch_all(&state.db_pool)
     .await
