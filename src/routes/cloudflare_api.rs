@@ -352,11 +352,27 @@ pub async fn check_health_status(
                 }
             }
             Err(e) => {
-                if e.is_connect() {
+                let err_str = e.to_string().to_lowercase();
+                // Cek apakah benar-benar DNS failure berdasarkan error message
+                if err_str.contains("dns error")
+                    || err_str.contains("name or service not known")
+                    || err_str.contains("failed to lookup")
+                    || err_str.contains("no such host")
+                    || err_str.contains("nodename nor servname")
+                    || err_str.contains("name resolution")
+                    || err_str.contains("resolve")
+                {
                     health_results.push(HostnameHealth {
                         hostname: host,
-                        status: "Connection/DNS failed (NXDOMAIN). CNAME missing or typo.".to_string(),
+                        status: "DNS CNAME record not found. Register the CNAME in the Routes tab first.".to_string(),
                         code: "NXDOMAIN".to_string(),
+                    });
+                } else if e.is_connect() || e.is_request() {
+                    // Connection error tapi DNS resolve ok — tunnel/service tidak bisa reach
+                    health_results.push(HostnameHealth {
+                        hostname: host,
+                        status: "Tunnel connected but cannot reach local service. Check if service is running.".to_string(),
+                        code: "ERR_502".to_string(),
                     });
                 } else if e.is_timeout() {
                     health_results.push(HostnameHealth {

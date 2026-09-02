@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend-vue/public/server-icon-blue.svg" width="96" alt="InfoIn Server" />
+</p>
+
 # InfoIn Server
 
 > **Your Linux server. Fully visible. Fully in control.**
@@ -45,6 +49,7 @@ A monitoring dashboard is a tool. If you cannot extend it, trust it, or understa
 - **OS Package Updates** — Detect upgradable packages via `apt` or `checkupdates` (pacman), apply upgrades with a live streaming terminal via WebSocket
 - **Cron Job Manager** — Read, add, edit, and delete `/etc/crontab` jobs via a structured form UI
 - **System Reboot & Update** — One-click server reboot and dashboard self-update via `git pull + cargo build`
+- **System Reset** — One-click reset for Cloudflare tunnel (full config + cert.pem), UFW firewall (all rules), and Fail2Ban (jail.local) from the Settings page
 
 ### User & Group Management
 - **Multi-user Dashboard Session** — Switch between different sudo users securely without logging out. Sessions are stored and handled gracefully. Only non-root users with `sudo` or `wheel` privileges are allowed
@@ -92,9 +97,16 @@ A monitoring dashboard is a tool. If you cannot extend it, trust it, or understa
 - **Full Setup Wizard** — Step-by-step wizard: Install → Authorize (capture URL) → Create Tunnel
 - **Control Panel** — Tunnel name, animated running status, version, UUID, quick stats (routes, active DNS, uptime), service start/stop/restart, and danger-zone delete
 - **Routes Tab** — Unified table for Ingress + CNAME status, inline actions, add route form
-- **Health Tab** — Per-domain HTTP probe with detailed E2E diagnostics: HEALTHY, ERR_502 (local service down), ERR_1033 (tunnel daemon down), NXDOMAIN (DNS missing)
+- **Health Tab** — Per-domain HTTP probe with accurate E2E diagnostics: HEALTHY, ERR_502 (local service down), ERR_1033 (tunnel daemon down), NXDOMAIN (DNS truly missing — distinguished from connection errors)
 - **Live Logs Tab** — WebSocket stream from `journalctl -f` for cloudflared, with filter (all/err/wrn), pause/resume, clear
 - **CNAME DNS Manager** — Register DNS CNAME to Cloudflare, tracked via local SQLite for instant status feedback
+
+### UI & Accessibility
+- **Dark Mode** — Full dark mode support with Moon/Sun toggle in the navbar. Preference persisted to `localStorage`
+- **Safety Status Colors** — Critical pages (dashboard, services, containers, Cloudflare) use semantic color indicators: emerald (healthy/online), yellow (degraded/pending), red (failed/down) with glow effects for instant visual scanning
+- **Responsive Layout** — Works on any screen size; tables auto-truncate long names without horizontal scroll
+
+---
 
 ### System Logs & Audit
 - **System Journal** — `journalctl` viewer with filter modes: All, Auth (SSH), Kernel (dmesg). Live auto-refresh with pause/resume
@@ -290,6 +302,14 @@ You can add **multiple backend servers** to a single frontend dashboard and swit
 InfoIn Server exposes a REST API with over 85 endpoints. All protected endpoints require a JWT token in the `Authorization: Bearer <token>` header.
 
 *(Key areas: `auth`, `metrics`, `system_mgmt`, `users_mgmt`, `services_mgmt`, `syslogs`, `cron_mgmt`, `ports`, `disk`, `speedtest`, `firewall`, `fail2ban`, `cloudflare`, `container`, `compose`, `files`)*
+
+**New endpoints added:**
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/firewall/reset` | POST | Reset UFW to default: disable + remove all rules |
+| `/api/fail2ban/reset` | POST | Reset Fail2Ban: delete `jail.local` + restart service |
+| `/api/cloudflare/reset` | POST | Full Cloudflare reset: tunnel, config, credentials, `cert.pem` |
 
 ---
 

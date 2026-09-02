@@ -717,7 +717,7 @@ onUnmounted(() => {
                     <td class="px-4 py-3">
                       <div class="flex items-center justify-end gap-1.5">
                         <button v-if="!r.cname_active" @click="registerDns(r.hostname)"
-                          class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-brand-50 hover:bg-brand-100 text-brand-600 border border-brand-200 dark:bg-brand-900/20 dark:text-brand-400 dark:border-brand-800 transition-colors"
+                          class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-brand-50 hover:bg-brand-100 text-brand-600 border border-brand-200 dark:bg-slate-700 dark:text-brand-300 dark:border-slate-500 dark:hover:bg-slate-600 transition-colors"
                           :disabled="registeringDnsMap[r.hostname]">
                           <Loader2 v-if="registeringDnsMap[r.hostname]" class="w-3 h-3 animate-spin inline" />
                           {{ registeringDnsMap[r.hostname] ? '...' : 'Add CNAME' }}

@@ -110,7 +110,8 @@ pub struct ContainerState {
         │   └── useApi.js         # Wrapper fetch: inject JWT, auto-logout jika 401 atau sudo fail
         ├── stores/
         │   ├── serverStore.js    # State multi-user session per server, OS name cache
-        │   └── toastStore.js     # Toast notification & confirmation modal
+        │   ├── toastStore.js     # Toast notification & confirmation modal
+        │   └── themeStore.js     # Dark mode toggle, isDark ref, localStorage persistence
         ├── utils/
         │   └── distro.js         # Helper: mapping OS name ke logo SVG SimpleIcons CDN
         └── views/
@@ -125,7 +126,7 @@ pub struct ContainerState {
             ├── CloudflareView.vue    # Cloudflare Setup Wizard & 3-Tab Command Center (Routes, Health, Logs)
             ├── SyslogsView.vue       # 3-Tab viewer: System Journal, Dashboard Activity, Bash History
             ├── UpdatesView.vue       # UI OS Upgrade dengan WebSocket terminal
-            └── SettingsView.vue      # Pengaturan koneksi server
+            ├── SettingsView.vue      # Pengaturan koneksi server + System Reset (Cloudflare, UFW, Fail2Ban)
 ```
 
 ---
@@ -177,9 +178,11 @@ Ada empat (4) endpoint WebSocket yang mendesain PTY atau mem-pipe stdout/stderr:
 1. `/api/terminal/ws` — Native Bash PTY
 2. `/api/metrics/ws` — Streaming loop sysinfo tiap 3 detik
 3. `/api/cloudflare/logs/ws` — Pipe `journalctl -u cloudflared -f`
-4. `/api/system/os_updates/ws` — Pipe `apt-get upgrade` (stdout & stderr merged via `tokio::select!`)
+4. `/api/system/os_updates/ws` — Pipe `apt-get upgrade` / `pacman -Syu` (stdout & stderr via mpsc channel)
 
 *WebSocket membutuhkan `?token=...` query param karena browser API tidak mendukung custom header pada handshake.*
+
+**Catatan penting:** `/api/system/os_updates/ws` **TIDAK masuk JWT whitelist** (berbeda dengan `/api/metrics/ws` dan `/api/cloudflare/logs/ws`). Endpoint ini divalidasi via `?token=` query param agar middleware men-inject `AuthUser` ke extensions — handler butuh `auth.0.pwd` (password dari JWT) untuk menjalankan `sudo apt-get upgrade` via stdin injection.
 
 ### 5.5 Fail2Ban & UFW (Security)
 - **UFW**: Backend melakukan parsing teks statis dari output `ufw status`. Aksi (allow/deny) diinjeksi via CLI.
@@ -187,6 +190,25 @@ Ada empat (4) endpoint WebSocket yang mendesain PTY atau mem-pipe stdout/stderr:
   - Konfigurasi `jail.local` di-parse secara manual menggunakan INI-style reader sederhana di Rust.
   - Endpoint `register` ban/unban memanipulasi memory daemon menggunakan `fail2ban-client`.
   - UI Frontend memiliki katalog *Quick Add* untuk setup service populer (Nginx, Postfix, dll) dengan parameter default.
+
+### 5.6 Dark Mode
+- **Strategy**: Class-based Tailwind CSS — class `.dark` ditambahkan/dihapus dari `<html>` element.
+- **Store**: `themeStore.js` — `isDark` reactive ref + `toggleDark()` yang toggle `.dark` class + persist ke `localStorage`.
+- **Key**: `localStorage['infoin-theme']` → `'dark'` | `'light'`. Default: light mode.
+- **Toggle**: Tombol Moon/Sun icon di navbar `App.vue` (klik Moon → dark, klik Sun → light).
+- **Views yang sudah full dark support**: semua view utama. Views yang pakai `isDark` conditional pattern (ContainerView, UsersView, SyslogsView, dll) langsung reaktif karena ref sudah aktif.
+- **CSS strategy dual**: beberapa view pakai `dark:` Tailwind prefix, beberapa pakai `:class="isDark ? '...' : '...'` — keduanya aktif setelah `themeStore` diaktifkan.
+
+### 5.7 System Reset (Settings Page)
+Halaman Settings per-server memiliki section **System Reset** dengan 3 aksi destruktif:
+
+| Aksi | Endpoint | Yang Dihapus |
+|---|---|---|
+| **Reset Cloudflare** | `POST /api/cloudflare/reset` | Stop service → uninstall systemd unit → `rm -rf /etc/cloudflared` → hapus `cert.pem` + `*.json` di `~/.cloudflared/` → hapus CNAME status dari DB |
+| **Reset UFW** | `POST /api/firewall/reset` | `ufw --force reset` → semua rules dihapus, UFW inactive |
+| **Reset Fail2Ban** | `POST /api/fail2ban/reset` | `rm -f /etc/fail2ban/jail.local` → `systemctl restart fail2ban` |
+
+Setiap aksi dilindungi oleh confirm dialog di frontend sebelum dieksekusi.
 
 ---
 
@@ -208,14 +230,17 @@ Ada empat (4) endpoint WebSocket yang mendesain PTY atau mem-pipe stdout/stderr:
 | | `/api/ports` | GET | Listening ports + scope (public/local) |
 | | `/api/speedtest/*` | GET/POST | History (limit 5) / Run test |
 | **Security** | `/api/firewall/*` | GET/POST | UFW status, toggle, rule |
+| | `/api/firewall/reset` | POST | Reset UFW: disable + hapus semua rules |
 | | `/api/fail2ban/status` | GET | Active jails + Banned IPs |
 | | `/api/fail2ban/ban` | POST | Manual ban IP |
 | | `/api/fail2ban/unban` | POST | Manual unban IP |
 | | `/api/fail2ban/config` | GET/POST | Editor `jail.local` |
 | | `/api/fail2ban/config/{name}`| DELETE | Hapus blok jail dari file |
 | | `/api/fail2ban/logs` | GET | Tail `/var/log/fail2ban.log` |
+| | `/api/fail2ban/reset` | POST | Reset Fail2Ban: hapus jail.local + restart |
 | **Cloudflare**| `/api/cloudflare/status` | GET | Status, service_uptime_secs |
 | | `/api/cloudflare/create` | POST | Create tunnel |
+| | `/api/cloudflare/reset` | POST | Full reset: tunnel + config + cert.pem + DB |
 | | `/api/cloudflare/routes` | POST/DEL | Add/Remove ingress rules |
 | | `/api/cloudflare/routes/dns` | POST | Register CNAME via CLI, save to DB |
 | | `/api/cloudflare/health` | GET | E2E HTTP probe (502, 1033, NXDOMAIN) |
@@ -237,3 +262,51 @@ Ada empat (4) endpoint WebSocket yang mendesain PTY atau mem-pipe stdout/stderr:
 
 ---
 *Dokumentasi ini otomatis merefleksikan status codebase per pembaruan terakhir. Pastikan untuk memperbarui dokumen ini jika ada penambahan rute atau modifikasi tabel DB baru.*
+
+---
+
+## 7. Catatan Bug Fix & Technical Notes
+
+Bagian ini mendokumentasikan bug yang pernah ditemukan dan cara fix-nya, sebagai referensi untuk developer/AI Agent yang men-debug issue serupa di masa depan.
+
+### 7.1 WebSocket OS Upgrade — stdout EOF Bug (`system_updates.rs`)
+
+**Bug:** `tokio::select!` dengan dua branch (stdout + stderr) langsung `break` saat branch stdout return `Ok(None)` (EOF). Karena `apt-get` menulis output ke stderr lebih dulu (progress bar, password prompt), stdout belum menghasilkan apapun saat `select!` pertama kali dipanggil — hasilnya `Ok(None)` → loop break → WebSocket closed sebelum upgrade dimulai.
+
+**Fix:** Ganti `tokio::select!` loop dengan dua `tokio::spawn` terpisah yang masing-masing stream stdout dan stderr ke `mpsc::channel`. Main task mem-forward dari channel ke WebSocket sampai channel ditutup (kedua task selesai). Tambahan: `stdin.flush().await` + explicit `drop(stdin)` sebelum streaming dimulai agar `sudo` menerima password sebelum pipe ditutup.
+
+**File:** `src/routes/system_updates.rs` — fungsi `handle_upgrade_ws()`
+
+---
+
+### 7.2 WebSocket OS Upgrade — JWT Whitelist Bug (`jwt_middleware.rs`)
+
+**Bug:** `/api/system/os_updates/ws` dimasukkan ke whitelist JWT (skip validasi), tapi handler `upgrade_ws_handler` menggunakan `Extension(auth): Extension<AuthUser>` yang hanya ada jika middleware meng-inject-nya. Karena di-skip, `AuthUser` tidak pernah diinject → Axum panic/error → WebSocket connection langsung dropped.
+
+**Fix:** Hapus `/api/system/os_updates/ws` dari whitelist. Middleware akan mengambil token dari `?token=` query param (sudah support di baris 47-48), verify, dan inject `AuthUser` seperti endpoint lain.
+
+**File:** `src/auth/jwt_middleware.rs` — whitelist di `jwt_auth_middleware()`
+
+---
+
+### 7.3 Cloudflare Create Tunnel — False Positive Guard (`cloudflare.rs`)
+
+**Bug:** Guard pengecekan "sudah ada tunnel" menggunakan:
+```rust
+if Path::new(config_path).exists() || sudo_exec(&password, &["cat", config_path]).is_ok() {
+```
+`sudo_exec(...).is_ok()` mengecek apakah **proses sudo berhasil di-spawn** (selalu `true`), bukan apakah file-nya ada. Akibatnya create tunnel selalu diblock meskipun `config.yml` sudah dihapus.
+
+**Fix:** Hapus kondisi `|| sudo_exec(...)` — cukup `Path::new(config_path).exists()`.
+
+**File:** `src/routes/cloudflare.rs` — fungsi `create_tunnel()`
+
+---
+
+### 7.4 Health Check Klasifikasi Error — Semua Connection Error jadi NXDOMAIN (`cloudflare_api.rs`)
+
+**Bug:** `e.is_connect()` menangkap **semua** connection error (SSL error, connection refused, connection reset, dll), semua diklasifikasikan sebagai `NXDOMAIN`. Akibatnya domain yang DNS-nya ada tapi local service-nya tidak berjalan tetap muncul sebagai NXDOMAIN padahal seharusnya ERR_502.
+
+**Fix:** Cek string error message untuk keyword DNS yang spesifik (`"dns error"`, `"name or service not known"`, `"failed to lookup"`, `"no such host"`, `"nodename nor servname"`, `"name resolution"`, `"resolve"`). Jika tidak cocok tapi `e.is_connect()` → klasifikasikan sebagai `ERR_502`.
+
+**File:** `src/routes/cloudflare_api.rs` — fungsi `check_health_status()`
