@@ -3,13 +3,11 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
-import { useThemeStore } from '../stores/themeStore'
 import { Download, RefreshCw, Terminal, CheckCircle2, AlertTriangle, Box } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl, getToken, activeServerId } = useServerStore()
 const { showToast } = useToastStore()
-const { isDark } = useThemeStore()
 
 const updateInfo = ref(null)
 const isChecking = ref(true)
@@ -97,16 +95,15 @@ onUnmounted(() => {
 
       <div v-else-if="updateInfo">
         <div class="flex flex-col md:flex-row gap-6 mb-6">
-          <div class="flex-1 p-6 rounded-xl border flex flex-col items-center justify-center text-center gap-2"
-               :class="isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
-            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Package Manager</span>
+          <div class="flex-1 p-6 rounded-xl border flex flex-col items-center justify-center text-center gap-2 bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Package Manager</span>
             <span class="text-2xl font-mono text-brand-500">{{ updateInfo.manager }}</span>
           </div>
           
           <div class="flex-1 p-6 rounded-xl border flex flex-col items-center justify-center text-center gap-2"
                :class="updateInfo.updatable_count > 0 
-                  ? (isDark ? 'bg-amber-900/20 border-amber-500/50' : 'bg-amber-50 border-amber-200')
-                  : (isDark ? 'bg-green-900/20 border-green-500/50' : 'bg-green-50 border-green-200')">
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-500/50'
+                  : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-500/50'">
             <span class="text-xs font-bold uppercase tracking-wider" :class="updateInfo.updatable_count > 0 ? 'text-amber-500' : 'text-green-500'">Updatable Packages</span>
             <span class="text-4xl font-bold" :class="updateInfo.updatable_count > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'">{{ updateInfo.updatable_count }}</span>
           </div>
@@ -136,7 +133,7 @@ onUnmounted(() => {
     <!-- Modal Terminal -->
     <Teleport to="body">
       <div v-if="showUpgradeModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4 bg-slate-900/80">
-        <div class="rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col h-[80vh]" :class="isDark ? 'bg-slate-900 border border-slate-700' : 'bg-slate-900'">
+        <div class="rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col h-[80vh] bg-slate-900 border border-slate-700">
           <div class="p-3 border-b border-slate-700 flex justify-between items-center bg-slate-950">
             <h3 class="font-bold text-slate-200 flex items-center gap-2"><Terminal class="w-4 h-4 text-brand-500"/> OS Upgrade Process</h3>
             <button @click="closeUpgradeModal" class="text-slate-400 hover:text-white px-2 py-1 text-xs border border-slate-700 rounded">Close</button>

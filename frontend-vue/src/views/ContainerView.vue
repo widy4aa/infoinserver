@@ -407,14 +407,14 @@ onUnmounted(() => clearInterval(pollInterval))
           <Loader2 class="w-4 h-4 animate-spin" /> Detecting runtime...
         </div>
         <template v-else-if="runtime?.available">
-          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-brand-100 text-brand-800 border border-brand-200">
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold bg-brand-100 dark:bg-slate-700 text-brand-800 dark:text-brand-300 border border-brand-200 dark:border-slate-600">
             <Box class="w-3.5 h-3.5" />
             {{ runtime.kind }} {{ runtime.version }}
           </span>
-          <span v-if="runtime.compose_available" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+          <span v-if="runtime.compose_available" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/60 text-green-700 dark:text-green-300">
             <Layers class="w-3 h-3" /> Compose available
           </span>
-          <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+          <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300">
             <AlertCircle class="w-3 h-3" /> No compose
           </span>
         </template>
@@ -436,8 +436,8 @@ onUnmounted(() => clearInterval(pollInterval))
     </div>
 
     <!-- ── Main Tabs ─────────────────────────────────────────────── -->
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div class="flex border-b border-slate-200 bg-slate-50/50 px-2 pt-2 gap-1">
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div class="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 px-2 pt-2 gap-1">
         <button v-for="tab in [
           { id: 'containers', label: 'Containers', icon: Box },
           { id: 'compose', label: 'Compose', icon: Layers },
@@ -451,8 +451,8 @@ onUnmounted(() => clearInterval(pollInterval))
         >
           <component :is="tab.icon" class="w-4 h-4" />
           {{ tab.label }}
-          <span v-if="tab.id === 'containers' && containers.length" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-600">{{ containers.length }}</span>
-          <span v-if="tab.id === 'compose' && composeProjects.length" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-600">{{ composeProjects.length }}</span>
+          <span v-if="tab.id === 'containers' && containers.length" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{{ containers.length }}</span>
+          <span v-if="tab.id === 'compose' && composeProjects.length" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{{ composeProjects.length }}</span>
         </button>
       </div>
 
@@ -481,7 +481,7 @@ onUnmounted(() => clearInterval(pollInterval))
 
           <div v-else class="overflow-x-auto">
             <table class="w-full text-sm">
-              <thead class="bg-slate-50 border-b-2 border-slate-200">
+              <thead class="bg-slate-50 dark:bg-slate-800/50 border-b-2 border-slate-200 dark:border-slate-700">
                 <tr>
                   <th class="table-th">Name</th>
                   <th class="table-th">Image</th>
@@ -491,10 +491,10 @@ onUnmounted(() => clearInterval(pollInterval))
                   <th class="table-th text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-slate-100">
-                <tr v-for="c in filteredContainers" :key="c.id" class="hover:bg-slate-50 group">
-                  <td class="table-td font-medium text-slate-800">{{ c.name }}</td>
-                  <td class="table-td text-slate-500 text-xs font-mono max-w-[180px] truncate" :title="c.image">{{ c.image }}</td>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+                <tr v-for="c in filteredContainers" :key="c.id" class="hover:bg-slate-50 dark:hover:bg-slate-700/50 group">
+                  <td class="table-td font-medium text-slate-800 dark:text-slate-100">{{ c.name }}</td>
+                  <td class="table-td text-slate-500 dark:text-slate-400 text-xs font-mono max-w-[180px] truncate" :title="c.image">{{ c.image }}</td>
                   <td class="table-td">
                     <div class="flex items-center gap-1.5">
                       <span class="relative flex h-2 w-2">
@@ -745,10 +745,10 @@ onUnmounted(() => clearInterval(pollInterval))
     <!-- ── Logs Modal ────────────────────────────────────────────── -->
     <Teleport to="body">
       <div v-if="logsModal.open" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="logsModal.open = false">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-            <h3 class="font-semibold text-slate-800 flex items-center gap-2"><Terminal class="w-4 h-4 text-brand-500" />{{ logsModal.title }}</h3>
-            <button @click="logsModal.open = false" class="p-1 rounded hover:bg-slate-100"><X class="w-4 h-4" /></button>
+        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+            <h3 class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2"><Terminal class="w-4 h-4 text-brand-500" />{{ logsModal.title }}</h3>
+            <button @click="logsModal.open = false" class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"><X class="w-4 h-4" /></button>
           </div>
           <div class="flex-1 overflow-auto p-3 bg-slate-950 rounded-b-xl">
             <div v-if="logsModal.loading" class="flex items-center justify-center h-32 text-slate-400">
@@ -763,10 +763,10 @@ onUnmounted(() => clearInterval(pollInterval))
     <!-- ── Inspect Modal ─────────────────────────────────────────── -->
     <Teleport to="body">
       <div v-if="inspectModal.open" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="inspectModal.open = false">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-            <h3 class="font-semibold text-slate-800 flex items-center gap-2"><ZoomIn class="w-4 h-4 text-brand-500" />{{ inspectModal.title }}</h3>
-            <button @click="inspectModal.open = false" class="p-1 rounded hover:bg-slate-100"><X class="w-4 h-4" /></button>
+        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+            <h3 class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2"><ZoomIn class="w-4 h-4 text-brand-500" />{{ inspectModal.title }}</h3>
+            <button @click="inspectModal.open = false" class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"><X class="w-4 h-4" /></button>
           </div>
           <div class="flex-1 overflow-auto p-3 bg-slate-950 rounded-b-xl">
             <pre class="text-xs text-slate-200 font-mono whitespace-pre-wrap leading-relaxed">{{ JSON.stringify(inspectModal.data, null, 2) }}</pre>
@@ -778,9 +778,9 @@ onUnmounted(() => clearInterval(pollInterval))
     <!-- ── YAML Modal ────────────────────────────────────────────── -->
     <Teleport to="body">
       <div v-if="yamlModal.open" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="yamlModal.open = false">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-            <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+            <h3 class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <FileText class="w-4 h-4 text-brand-500" />
               {{ yamlModal.projectName }} — docker-compose.yml
             </h3>
@@ -792,7 +792,7 @@ onUnmounted(() => clearInterval(pollInterval))
                 {{ yamlModal.saving ? 'Saving...' : 'Save & Apply' }}
               </button>
               <button v-if="yamlModal.editing" @click="yamlModal.editing = false" class="btn-outline text-xs"><X class="w-3.5 h-3.5" /> Cancel</button>
-              <button @click="yamlModal.open = false" class="p-1 rounded hover:bg-slate-100"><X class="w-4 h-4" /></button>
+              <button @click="yamlModal.open = false" class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"><X class="w-4 h-4" /></button>
             </div>
           </div>
           <div class="flex-1 overflow-auto p-3 bg-slate-950 rounded-b-xl">

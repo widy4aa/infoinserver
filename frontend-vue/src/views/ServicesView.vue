@@ -160,34 +160,33 @@ onUnmounted(() => {
         <Loader2 class="w-8 h-8 animate-spin text-brand-500" />
       </div>
 
-      <div v-else class="overflow-y-auto overflow-x-hidden flex-1 border border-slate-200 rounded-lg bg-white relative">
+      <div v-else class="overflow-y-auto overflow-x-hidden flex-1 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 relative">
         <table class="w-full relative">
-          <thead class="sticky top-0 bg-slate-50 shadow-sm z-10">
+          <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800/90 shadow-sm z-10">
             <tr>
               <th class="table-th w-1/2">Unit Name</th>
               <th class="table-th w-24">Status</th>
-              <th class="table-th text-right w-40 sticky right-0 bg-slate-50 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.04)]">Actions</th>
+              <th class="table-th text-right w-40 sticky right-0 bg-slate-50 dark:bg-slate-800/90 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.04)]">Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="s in filteredServices" :key="s.unit" class="hover:bg-slate-50 group">
+            <tr v-for="s in filteredServices" :key="s.unit" class="hover:bg-slate-50 dark:hover:bg-slate-700/50 group border-b border-slate-100 dark:border-slate-700 last:border-0">
               <td class="table-td w-1/2 max-w-0">
-                <div class="truncate font-mono text-sm text-slate-800 font-semibold">{{ s.unit }}</div>
-                <div class="truncate text-xs text-slate-400 mt-0.5" :title="s.description">{{ s.description }}</div>
+                <div class="truncate font-mono text-sm text-slate-800 dark:text-slate-100 font-semibold">{{ s.unit }}</div>
+                <div class="truncate text-xs text-slate-400 dark:text-slate-500 mt-0.5" :title="s.description">{{ s.description }}</div>
               </td>
               <td class="table-td">
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
                       :class="{
-                        'bg-green-100 text-green-700': s.active === 'active',
-                        'bg-red-100 text-red-700': s.active === 'failed' || s.sub === 'failed',
-                        'bg-slate-100 text-slate-600': s.active !== 'active' && s.active !== 'failed'
+                        'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400': s.active === 'active',
+                        'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400': s.active === 'failed' || s.sub === 'failed',
+                        'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400': s.active !== 'active' && s.active !== 'failed'
                       }">
                   {{ s.active }}
                 </span>
-                <div class="text-[10px] text-slate-400 mt-1 capitalize">{{ s.sub }}</div>
+                <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 capitalize">{{ s.sub }}</div>
               </td>
-              <td class="table-td text-right sticky right-0 bg-white dark:bg-slate-800 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.04)]">
-                <div class="flex items-center justify-end gap-1">
+              <td class="table-td text-right sticky right-0 bg-white dark:bg-slate-800 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.04)]">                <div class="flex items-center justify-end gap-1">
                   <button @click="handleAction('start', s.unit)" class="btn-icon-green" title="Start" :disabled="s.active === 'active'"><Play class="w-3 h-3" /></button>
                   <button @click="handleAction('stop', s.unit)" class="btn-icon-amber" title="Stop" :disabled="s.active !== 'active'"><Square class="w-3 h-3" /></button>
                   <button @click="handleAction('restart', s.unit)" class="btn-icon-blue" title="Restart"><RefreshCw class="w-3 h-3" /></button>
@@ -213,9 +212,9 @@ onUnmounted(() => {
         <div class="flex items-center justify-between shrink-0 mb-3">
           <h2 class="card-title mb-0">Top Processes</h2>
           
-          <div class="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md">
-            <button @click="processSortBy = 'cpu'" :class="processSortBy === 'cpu' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-2 py-1 rounded text-[10px] font-bold uppercase transition-all">CPU</button>
-            <button @click="processSortBy = 'ram'" :class="processSortBy === 'ram' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'" class="px-2 py-1 rounded text-[10px] font-bold uppercase transition-all">RAM</button>
+          <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-700 p-0.5 rounded-md">
+            <button @click="processSortBy = 'cpu'" :class="processSortBy === 'cpu' ? 'bg-white dark:bg-slate-600 shadow-sm text-slate-800 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'" class="px-2 py-1 rounded text-[10px] font-bold uppercase transition-all">CPU</button>
+            <button @click="processSortBy = 'ram'" :class="processSortBy === 'ram' ? 'bg-white dark:bg-slate-600 shadow-sm text-slate-800 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'" class="px-2 py-1 rounded text-[10px] font-bold uppercase transition-all">RAM</button>
           </div>
         </div>
 
@@ -225,10 +224,10 @@ onUnmounted(() => {
         </div>
 
         <div class="overflow-y-auto flex-1 pr-1 space-y-1.5 -mr-1">
-          <div v-for="p in filteredAndSortedProcesses" :key="p.pid" class="flex items-center justify-between p-2 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-100 transition-colors">
+          <div v-for="p in filteredAndSortedProcesses" :key="p.pid" class="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-100 dark:border-slate-700 transition-colors">
             <div class="flex-1 min-w-0 mr-2">
-              <div class="font-semibold text-[13px] text-slate-700 truncate" :title="p.name">{{ p.name }}</div>
-              <div class="text-[10px] text-slate-400 font-mono mt-0.5">PID: {{ p.pid }}</div>
+              <div class="font-semibold text-[13px] text-slate-700 dark:text-slate-200 truncate" :title="p.name">{{ p.name }}</div>
+              <div class="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">PID: {{ p.pid }}</div>
             </div>
             <div class="flex flex-col items-end mr-3 w-16">
               <span class="text-xs font-bold" :class="processSortBy === 'cpu' ? 'text-brand-600' : 'text-slate-600'">{{ p.cpu_usage.toFixed(1) }}%</span>

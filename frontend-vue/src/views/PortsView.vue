@@ -606,17 +606,35 @@ onUnmounted(() => {
           </div>
 
           <!-- Add Rule Form -->
-          <div class="rounded-xl border p-3 mb-4" :class="isDark ? 'border-slate-700 bg-slate-800/30' : 'border-slate-200 bg-slate-50'">
-            <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Add Rule</div>
-            <div class="flex gap-2">
-              <select v-model="newRule.action" class="input-field py-1.5 text-sm w-24 shrink-0">
-                <option value="allow">Allow</option>
-                <option value="deny">Deny</option>
-              </select>
-              <input v-model="newRule.port" type="text" placeholder="Port or service (e.g. 8080, ssh)" class="input-field py-1.5 text-sm flex-1" @keyup.enter="addUfwRule" :disabled="isAddingRule" />
-              <button @click="addUfwRule" class="btn-primary py-1.5 px-3 shrink-0" :disabled="isAddingRule">
+          <div class="rounded-xl border p-4 mb-4" :class="isDark ? 'border-slate-700 bg-slate-800/30' : 'border-slate-200 bg-slate-50'">
+            <div class="text-xs font-semibold mb-3" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Add Firewall Rule</div>
+            <div class="grid grid-cols-[110px_1fr] gap-3 mb-3">
+              <!-- Action -->
+              <div>
+                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">Action</label>
+                <select v-model="newRule.action" class="input-field text-sm">
+                  <option value="allow">Allow</option>
+                  <option value="deny">Deny</option>
+                </select>
+              </div>
+              <!-- Port / Service -->
+              <div>
+                <label class="block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1">Port / Service</label>
+                <input v-model="newRule.port" type="text"
+                  placeholder="e.g. 80, 443, 22, ssh"
+                  class="input-field text-sm"
+                  @keyup.enter="addUfwRule"
+                  :disabled="isAddingRule" />
+                <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                  Port number, range (80:90/tcp), atau nama service
+                </p>
+              </div>
+            </div>
+            <div class="flex justify-end">
+              <button @click="addUfwRule" class="btn-primary text-sm" :disabled="isAddingRule">
                 <Loader2 v-if="isAddingRule" class="w-4 h-4 animate-spin" />
                 <Plus v-else class="w-4 h-4" />
+                Add Rule
               </button>
             </div>
           </div>

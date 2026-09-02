@@ -1,10 +1,12 @@
 <script setup>
 import { RouterView, RouterLink } from 'vue-router'
-import { RefreshCw } from 'lucide-vue-next'
+import { RefreshCw, Moon, Sun } from 'lucide-vue-next'
 import ToastAlert from './components/ToastAlert.vue'
 import { useToastStore } from './stores/toastStore'
+import { useThemeStore } from './stores/themeStore'
 
 const { showConfirm, showToast } = useToastStore()
+const { isDark, toggleDark } = useThemeStore()
 
 const handleUpdate = async () => {
   showConfirm(
@@ -39,8 +41,15 @@ const handleUpdate = async () => {
             <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100 tracking-tight hidden sm:block">infoinserver</h1>
           </RouterLink>
           
-          <div class="flex items-center gap-3">
-            <button @click="handleUpdate" class="btn-outline text-brand-600" title="Pull changes and rebuild">
+          <div class="flex items-center gap-2">
+            <!-- Dark mode toggle -->
+            <button @click="toggleDark"
+              class="w-9 h-9 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 transition-all duration-150"
+              :title="isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'">
+              <Sun v-if="isDark" class="w-4 h-4" />
+              <Moon v-else class="w-4 h-4" />
+            </button>
+            <button @click="handleUpdate" class="btn-outline" title="Pull changes and rebuild">
               <RefreshCw class="w-4 h-4" />
               <span class="hidden sm:inline">Update Dashboard</span>
             </button>

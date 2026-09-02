@@ -4,12 +4,10 @@ import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
 import { Clock, Loader2, Save, Trash2, Edit3, Plus, X } from 'lucide-vue-next'
-import { useThemeStore } from '../stores/themeStore'
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
 const { showToast, showConfirm } = useToastStore()
-const { isDark } = useThemeStore()
 
 const crontabRaw = ref('')
 const parsedJobs = ref([])
@@ -165,9 +163,9 @@ onMounted(fetchCron)
         <Loader2 class="w-8 h-8 animate-spin text-brand-500" />
       </div>
 
-      <div v-else class="overflow-x-auto border border-slate-200 rounded-lg">
+      <div v-else class="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-lg">
         <table class="w-full">
-          <thead class="bg-slate-50 border-b border-slate-200">
+          <thead class="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
             <tr>
               <th class="table-th w-32">Schedule</th>
               <th class="table-th">Command</th>
@@ -177,9 +175,9 @@ onMounted(fetchCron)
           <tbody>
             <template v-for="(job, index) in parsedJobs" :key="index">
               <!-- Render hanya type 'job' di tabel UI. Comments disimpan di background -->
-              <tr v-if="job.type === 'job'" class="hover:bg-slate-50 border-b border-slate-100 last:border-0 group">
+              <tr v-if="job.type === 'job'" class="hover:bg-slate-50 dark:hover:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700 last:border-0 group">
                 <td class="table-td">
-                  <div class="flex gap-1 font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded w-max">
+                  <div class="flex gap-1 font-mono text-xs font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded w-max">
                     <span class="w-3 text-center text-blue-600" title="Minute">{{ job.minute }}</span>
                     <span class="w-3 text-center text-green-600" title="Hour">{{ job.hour }}</span>
                     <span class="w-3 text-center text-purple-600" title="Day of Month">{{ job.dayMonth }}</span>
@@ -187,7 +185,7 @@ onMounted(fetchCron)
                     <span class="w-3 text-center text-red-600" title="Day of Week">{{ job.dayWeek }}</span>
                   </div>
                 </td>
-                <td class="table-td font-mono text-xs text-slate-600 break-all">{{ job.command }}</td>
+                <td class="table-td font-mono text-xs text-slate-600 dark:text-slate-300 break-all">{{ job.command }}</td>
                 <td class="table-td text-right">
                   <div class="flex items-center justify-end gap-1.5 opacity-50 group-hover:opacity-100 transition-opacity">
                     <button @click="openEditModal(job, index)" class="btn-icon-blue" title="Edit"><Edit3 class="w-3 h-3" /></button>
@@ -197,7 +195,7 @@ onMounted(fetchCron)
               </tr>
             </template>
             <tr v-if="!parsedJobs.some(j => j.type === 'job')">
-              <td colspan="3" class="text-center p-8 text-slate-500">No scheduled tasks found.</td>
+              <td colspan="3" class="text-center p-8 text-slate-500 dark:text-slate-400">No scheduled tasks found.</td>
             </tr>
           </tbody>
         </table>
@@ -207,13 +205,13 @@ onMounted(fetchCron)
     <!-- Modal Form -->
     <Teleport to="body">
       <div v-if="showModal" class="fixed inset-0 z-[100] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
-          <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-            <h3 class="font-bold flex items-center gap-2"><Clock class="w-4 h-4 text-brand-500"/> {{ isEditing ? 'Edit' : 'Add' }} Cronjob</h3>
-            <button @click="showModal = false" class="text-slate-400 hover:text-slate-600"><X class="w-4 h-4"/></button>
+        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+          <div class="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900 shrink-0">
+            <h3 class="font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100"><Clock class="w-4 h-4 text-brand-500"/> {{ isEditing ? 'Edit' : 'Add' }} Cronjob</h3>
+            <button @click="showModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"><X class="w-4 h-4"/></button>
           </div>
           
-          <div class="p-5 space-y-4">
+          <div class="p-5 space-y-4 bg-white dark:bg-slate-800">
             <div class="grid grid-cols-5 gap-2">
               <div>
                 <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Minute</label>
@@ -238,12 +236,12 @@ onMounted(fetchCron)
             </div>
 
             <div>
-              <label class="block text-xs font-semibold text-slate-500 mb-1">Command to Execute</label>
+              <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Command to Execute</label>
               <textarea v-model="formJob.command" class="input-field font-mono text-sm min-h-[80px]" placeholder="/path/to/script.sh >> /var/log/script.log 2>&1"></textarea>
             </div>
             
           </div>
-          <div class="p-4 border-t border-slate-100 bg-slate-50 shrink-0 flex justify-end gap-2">
+          <div class="p-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 shrink-0 flex justify-end gap-2">
             <button @click="showModal = false" class="btn-secondary">Cancel</button>
             <button @click="submitJob" class="btn-primary">Save Job</button>
           </div>
