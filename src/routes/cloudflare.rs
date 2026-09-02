@@ -445,7 +445,7 @@ pub async fn stop_cloudflare_tunnel(
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let password = auth.0.pwd.clone();
-    
+
     // Stop service cloudflared (managed tunnel)
     let _ = sudo_exec(&password, &["systemctl", "stop", "cloudflared"]);
 
@@ -458,7 +458,49 @@ pub async fn stop_cloudflare_tunnel(
     })))
 }
 
-/// Mendapatkan logs dari journalctl untuk service cloudflared (HTTP endpoint, deprecated tapi bisa disimpan sbg fallback)
+/// Full reset: hapus semua config Cloudflare termasuk cert.pem, credentials, service
+pub async fn reset_cloudflare(
+    Extension(auth): Extension<AuthUser>,
+    State(state): State<crate::AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+
+    // 1. Stop & disable & kill service
+    let _ = sudo_exec(&password, &["systemctl", "stop", "cloudflared"]);
+    let _ = sudo_exec(&password, &["systemctl", "disable", "cloudflared"]);
+    let _ = sudo_exec(&password, &["pkill", "-x", "cloudflared"]);
+
+    // 2. Uninstall systemd service unit file
+    let _ = sudo_exec(&password, &["cloudflared", "service", "uninstall"]);
+    let _ = sudo_exec(&password, &["rm", "-f", "/etc/systemd/system/cloudflared.service"]);
+    let _ = sudo_exec(&password, &["systemctl", "daemon-reload"]);
+
+    // 3. Hapus seluruh direktori /etc/cloudflared/ (config + credentials)
+    let _ = sudo_exec(&password, &["rm", "-rf", "/etc/cloudflared"]);
+
+    // 4. Hapus cert.pem + credentials di home user (full reset termasuk auth)
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    let cert_path = format!("{}/.cloudflared/cert.pem", home);
+    let _ = sudo_exec(&password, &["rm", "-f", &cert_path]);
+    let cred_glob = format!("rm -f {}/.cloudflared/*.json", home);
+    let _ = sudo_exec(&password, &["sh", "-c", &cred_glob]);
+
+    // 5. Hapus CNAME status dari database lokal
+    let _ = sqlx::query("DELETE FROM cloudflare_cname_status")
+        .execute(&state.db_pool)
+        .await;
+
+    // 6. Log activity
+    crate::routes::logs::log_activity(
+        &state.db_pool, "WARNING", "Cloudflare Full Reset",
+        "All Cloudflare configuration, credentials, and auth certificate removed"
+    ).await;
+
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "message": "Cloudflare configuration fully reset. Re-authorize and create a new tunnel to start fresh."
+    })))
+}
 pub async fn get_cloudflare_logs(
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {

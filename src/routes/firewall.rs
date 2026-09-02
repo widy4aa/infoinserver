@@ -1,4 +1,4 @@
-use axum::{Json, http::StatusCode, extract::Extension};
+use axum::{Json, http::StatusCode, extract::Extension, extract::State};
 use serde::{Deserialize, Serialize};
 use crate::auth::jwt_middleware::AuthUser;
 use crate::routes::process_mgmt::sudo_exec;
@@ -117,4 +117,34 @@ pub async fn manage_ufw_rule_handler(
         let err = String::from_utf8_lossy(&output.stderr);
         Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to apply rule: {}", err)))
     }
+}
+
+/// Reset UFW ke default: disable + hapus semua rules
+pub async fn reset_ufw(
+    State(state): State<crate::AppState>,
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+
+    let out = tokio::task::spawn_blocking(move || {
+        sudo_exec(&password, &["ufw", "--force", "reset"])
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).to_string();
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("UFW reset failed: {}", err)));
+    }
+
+    crate::routes::logs::log_activity(
+        &state.db_pool, "WARNING", "UFW Reset",
+        "UFW disabled and all rules removed (reset to default)"
+    ).await;
+
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "message": "UFW has been reset to default. All rules removed and firewall is now inactive."
+    })))
 }

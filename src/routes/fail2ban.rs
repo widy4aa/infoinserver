@@ -422,3 +422,40 @@ pub async fn delete_jail_handler(
         Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete jail from config".to_string()))
     }
 }
+
+/// Reset Fail2Ban ke default: hapus jail.local + restart service
+pub async fn reset_fail2ban(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthUser>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let password = auth.0.pwd.clone();
+    let password2 = password.clone();
+
+    // 1. Hapus jail.local
+    let out = tokio::task::spawn_blocking(move || {
+        sudo_exec(&password, &["rm", "-f", "/etc/fail2ban/jail.local"])
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).to_string();
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to delete jail.local: {}", err)));
+    }
+
+    // 2. Restart fail2ban agar perubahan berlaku
+    let _ = tokio::task::spawn_blocking(move || {
+        sudo_exec(&password2, &["systemctl", "restart", "fail2ban"])
+    }).await;
+
+    crate::routes::logs::log_activity(
+        &state.db_pool, "WARNING", "Fail2Ban Reset",
+        "jail.local deleted and fail2ban restarted (reset to default)"
+    ).await;
+
+    Ok(Json(serde_json::json!({
+        "status": "success",
+        "message": "Fail2Ban reset to default. jail.local removed and service restarted."
+    })))
+}
