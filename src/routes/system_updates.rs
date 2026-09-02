@@ -120,15 +120,18 @@ pub async fn upgrade_ws_handler(
 }
 
 async fn handle_upgrade_ws(mut socket: WebSocket, password: String, pool: sqlx::SqlitePool) {
+    use tokio::io::AsyncWriteExt;
+    use tokio::sync::mpsc;
+
     let is_apt = std::process::Command::new("which").arg("apt-get").output()
         .map(|o| o.status.success()).unwrap_or(false);
     let is_pacman = std::process::Command::new("which").arg("pacman").output()
         .map(|o| o.status.success()).unwrap_or(false);
 
     let (cmd, cmd_args) = if is_apt {
-        ("sudo", vec!["-S", "apt-get", "upgrade", "-y"])
+        ("sudo", vec!["-S", "-p", "", "apt-get", "upgrade", "-y"])
     } else if is_pacman {
-        ("sudo", vec!["-S", "pacman", "-Syu", "--noconfirm"])
+        ("sudo", vec!["-S", "-p", "", "pacman", "-Syu", "--noconfirm"])
     } else {
         let _ = socket.send(Message::Text("Unsupported package manager.".into())).await;
         return;
@@ -154,13 +157,15 @@ async fn handle_upgrade_ws(mut socket: WebSocket, password: String, pool: sqlx::
         }
     };
 
-    // Inject sudo password ke stdin
+    // Inject sudo password ke stdin, flush, lalu drop pipe
     if let Some(mut stdin) = child.stdin.take() {
-        use tokio::io::AsyncWriteExt;
         let _ = stdin.write_all(format!("{}\n", password).as_bytes()).await;
+        let _ = stdin.flush().await;
+        // drop stdin secara eksplisit agar sudo tahu EOF dan mulai proses
+        drop(stdin);
     }
 
-    // Ambil STDOUT dan STDERR agar keduanya bisa di-stream ke WebSocket
+    // Ambil stdout dan stderr
     let stdout = match child.stdout.take() {
         Some(s) => s,
         None => {
@@ -178,53 +183,44 @@ async fn handle_upgrade_ws(mut socket: WebSocket, password: String, pool: sqlx::
         }
     };
 
-    let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
+    // Gunakan mpsc channel untuk merge stdout + stderr ke satu stream
+    let (tx, mut rx) = mpsc::channel::<String>(128);
 
-    // Stream stdout dan stderr secara bersamaan ke WebSocket
-    // apt-get sering menulis output penting ke stderr (progress, errors)
-    loop {
-        tokio::select! {
-            // Baca dari stdout
-            line = stdout_reader.next_line() => {
-                match line {
-                    Ok(Some(log_line)) => {
-                        if socket.send(Message::Text(log_line.into())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Ok(None) => break, // stdout EOF
-                    Err(_) => break,
-                }
-            }
-            // Baca dari stderr
-            line = stderr_reader.next_line() => {
-                match line {
-                    Ok(Some(log_line)) if !log_line.trim().is_empty() => {
-                        // Kirim stderr dengan prefix agar mudah dibedakan
-                        let prefixed = if log_line.contains("ERROR") || log_line.contains("error") {
-                            format!("[ERR] {}", log_line)
-                        } else {
-                            log_line
-                        };
-                        if socket.send(Message::Text(prefixed.into())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Ok(_) => {} // baris kosong, skip
-                    Err(_) => {} // ignore stderr errors
-                }
-            }
-            // Deteksi jika client menutup koneksi
-            msg = socket.recv() => {
-                if let Some(Ok(Message::Close(_))) | None = msg {
-                    break;
-                }
-            }
+    // Task: stream stdout
+    let tx_out = tx.clone();
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            if tx_out.send(line).await.is_err() { break; }
+        }
+    });
+
+    // Task: stream stderr
+    let tx_err = tx.clone();
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            if line.trim().is_empty() { continue; }
+            let prefixed = if line.contains("ERROR") || line.contains("error") {
+                format!("[ERR] {}", line)
+            } else {
+                line
+            };
+            if tx_err.send(prefixed).await.is_err() { break; }
+        }
+    });
+
+    // Drop tx original agar channel tutup saat kedua task selesai
+    drop(tx);
+
+    // Forward semua baris dari channel ke WebSocket
+    while let Some(line) = rx.recv().await {
+        if socket.send(Message::Text(line.into())).await.is_err() {
+            break;
         }
     }
 
-    // Tunggu proses benar-benar selesai sebelum menutup koneksi
+    // Tunggu proses benar-benar selesai
     let _ = child.wait().await;
 
     crate::routes::logs::log_activity(
@@ -232,6 +228,5 @@ async fn handle_upgrade_ws(mut socket: WebSocket, password: String, pool: sqlx::
         "Executed OS package upgrade via Dashboard"
     ).await;
 
-    // Kirim pesan selesai
     let _ = socket.send(Message::Text("\n--- Upgrade Process Finished ---".into())).await;
 }

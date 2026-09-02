@@ -160,20 +160,21 @@ onUnmounted(() => {
         <Loader2 class="w-8 h-8 animate-spin text-brand-500" />
       </div>
 
-      <div v-else class="overflow-y-auto flex-1 border border-slate-200 rounded-lg bg-white relative">
+      <div v-else class="overflow-y-auto overflow-x-hidden flex-1 border border-slate-200 rounded-lg bg-white relative">
         <table class="w-full relative">
           <thead class="sticky top-0 bg-slate-50 shadow-sm z-10">
             <tr>
-              <th class="table-th w-1/3">Unit Name</th>
-              <th class="table-th">Description</th>
+              <th class="table-th w-1/2">Unit Name</th>
               <th class="table-th w-24">Status</th>
-              <th class="table-th text-right w-40">Actions</th>
+              <th class="table-th text-right w-40 sticky right-0 bg-slate-50 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.04)]">Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="s in filteredServices" :key="s.unit" class="hover:bg-slate-50 group">
-              <td class="table-td font-mono text-sm text-slate-800 font-semibold">{{ s.unit }}</td>
-              <td class="table-td text-xs text-slate-600 truncate max-w-[200px]" :title="s.description">{{ s.description }}</td>
+              <td class="table-td w-1/2 max-w-0">
+                <div class="truncate font-mono text-sm text-slate-800 font-semibold">{{ s.unit }}</div>
+                <div class="truncate text-xs text-slate-400 mt-0.5" :title="s.description">{{ s.description }}</div>
+              </td>
               <td class="table-td">
                 <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase"
                       :class="{
@@ -185,8 +186,8 @@ onUnmounted(() => {
                 </span>
                 <div class="text-[10px] text-slate-400 mt-1 capitalize">{{ s.sub }}</div>
               </td>
-              <td class="table-td text-right">
-                <div class="flex items-center justify-end gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+              <td class="table-td text-right sticky right-0 bg-white dark:bg-slate-800 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.04)]">
+                <div class="flex items-center justify-end gap-1">
                   <button @click="handleAction('start', s.unit)" class="btn-icon-green" title="Start" :disabled="s.active === 'active'"><Play class="w-3 h-3" /></button>
                   <button @click="handleAction('stop', s.unit)" class="btn-icon-amber" title="Stop" :disabled="s.active !== 'active'"><Square class="w-3 h-3" /></button>
                   <button @click="handleAction('restart', s.unit)" class="btn-icon-blue" title="Restart"><RefreshCw class="w-3 h-3" /></button>
@@ -199,7 +200,7 @@ onUnmounted(() => {
               </td>
             </tr>
             <tr v-if="filteredServices.length === 0">
-              <td colspan="4" class="text-center p-8 text-slate-500">No services found</td>
+              <td colspan="3" class="text-center p-8 text-slate-500">No services found</td>
             </tr>
           </tbody>
         </table>

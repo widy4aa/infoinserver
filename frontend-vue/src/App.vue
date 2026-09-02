@@ -1,6 +1,6 @@
 <script setup>
 import { RouterView, RouterLink } from 'vue-router'
-import { Server, RefreshCw } from 'lucide-vue-next'
+import { RefreshCw } from 'lucide-vue-next'
 import ToastAlert from './components/ToastAlert.vue'
 import { useToastStore } from './stores/toastStore'
 
@@ -35,7 +35,7 @@ const handleUpdate = async () => {
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
           <RouterLink to="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <Server class="w-6 h-6 text-brand-600" />
+            <img src="/server-icon-blue.svg" alt="InfoIn Server" class="w-8 h-8 object-contain" />
             <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100 tracking-tight hidden sm:block">infoinserver</h1>
           </RouterLink>
           
