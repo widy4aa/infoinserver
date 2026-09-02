@@ -26,8 +26,7 @@ pub async fn jwt_auth_middleware(
     // (WebSocket endpoints menggunakan ?token= query param, divalidasi di bawah)
     if path.starts_with("/api/auth/") 
         || path.starts_with("/api/metrics/ws")
-        || path.starts_with("/api/cloudflare/logs/ws")
-        || path.starts_with("/api/system/os_updates/ws") {
+        || path.starts_with("/api/cloudflare/logs/ws") {
         return Ok(next.run(request).await);
     }
 
