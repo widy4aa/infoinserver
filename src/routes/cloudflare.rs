@@ -246,7 +246,7 @@ pub async fn create_tunnel(
 
     // Pastikan 1 device hanya punya 1 tunnel
     let config_path = "/etc/cloudflared/config.yml";
-    if std::path::Path::new(config_path).exists() || sudo_exec(&password, &["cat", config_path]).is_ok() {
+    if std::path::Path::new(config_path).exists() {
         return Err((StatusCode::BAD_REQUEST, "A tunnel is already configured on this device. Please delete it first before creating a new one.".to_string()));
     }
 
