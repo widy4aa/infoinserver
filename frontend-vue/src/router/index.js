@@ -13,10 +13,28 @@ import SyslogsView from '../views/SyslogsView.vue'
 import CronView from '../views/CronView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import UpdatesView from '../views/UpdatesView.vue'
+import LoginView from '../views/LoginView.vue'
+import AuthCallbackView from '../views/AuthCallbackView.vue'
+import { useAuthStore } from '../stores/authStore'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    // ── Public routes (tidak butuh GitHub login) ──
+    {
+      path: '/login',
+      name: 'login',
+      component: LoginView,
+      meta: { public: true },
+    },
+    {
+      path: '/auth/callback',
+      name: 'auth-callback',
+      component: AuthCallbackView,
+      meta: { public: true },
+    },
+
+    // ── Protected routes (butuh GitHub login) ──
     {
       path: '/',
       name: 'home',
@@ -32,22 +50,40 @@ const router = createRouter({
       component: ServerLayout,
       children: [
         { path: 'dashboard', name: 'dashboard', component: DashboardView },
-        { path: 'updates', name: 'updates', component: UpdatesView },
-        { path: 'services', name: 'services', component: ServicesView },
-        { path: 'syslogs', name: 'syslogs', component: SyslogsView },
-        { path: 'cron', name: 'cron', component: CronView },
-        { path: 'ports', name: 'ports', component: PortsView },
-        { path: 'cloudflare', name: 'cloudflare', component: CloudflareView },
-        { path: 'containers', name: 'containers', component: ContainerView },
+        { path: 'updates',   name: 'updates',   component: UpdatesView },
+        { path: 'services',  name: 'services',  component: ServicesView },
+        { path: 'syslogs',   name: 'syslogs',   component: SyslogsView },
+        { path: 'cron',      name: 'cron',      component: CronView },
+        { path: 'ports',     name: 'ports',     component: PortsView },
+        { path: 'cloudflare',name: 'cloudflare',component: CloudflareView },
+        { path: 'containers',name: 'containers',component: ContainerView },
         // Legacy redirect
         { path: 'podman', redirect: to => ({ name: 'containers', params: to.params }) },
-        { path: 'files', name: 'files', component: FilesView },
-        { path: 'users', name: 'users', component: UsersView },
-        { path: 'logs', name: 'logs', component: LogsView },
+        { path: 'files',  name: 'files',  component: FilesView },
+        { path: 'users',  name: 'users',  component: UsersView },
+        { path: 'logs',   name: 'logs',   component: LogsView },
         { path: 'settings', name: 'settings', component: SettingsView },
       ]
     }
   ],
+})
+
+// ── Navigation Guard: proteksi semua route kecuali yang meta.public ──
+router.beforeEach((to) => {
+  const { isLoggedIn } = useAuthStore()
+
+  if (to.meta?.public) {
+    // Route publik — langsung lanjut
+    return true
+  }
+
+  if (!isLoggedIn.value) {
+    // Belum login GitHub → redirect ke /login
+    return { name: 'login' }
+  }
+
+  // Sudah login → lanjut
+  return true
 })
 
 export default router

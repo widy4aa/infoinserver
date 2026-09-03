@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { Lock, User, Loader2, AlertCircle, Server } from 'lucide-vue-next'
+import { Lock, User, Loader2, AlertCircle, ArrowLeft } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 import { useServerStore } from '../stores/serverStore'
 import { useThemeStore } from '../stores/themeStore'
 
@@ -11,6 +12,7 @@ const emit = defineEmits(['success'])
 
 const { setToken } = useServerStore()
 const { isDark } = useThemeStore()
+const router = useRouter()
 
 const username = ref('')
 const password = ref('')
@@ -72,6 +74,9 @@ const helpTextClass = computed(() => isDark.value ? 'text-slate-500' : 'text-sla
 
       <!-- Header -->
       <div class="px-6 py-5 flex items-center gap-3 border-b" :class="headerClass">
+        <button @click="router.push('/')" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-all shrink-0" title="Back to Home">
+          <ArrowLeft class="w-4 h-4" />
+        </button>
         <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center shrink-0">
           <Lock class="w-4 h-4 text-white" />
         </div>

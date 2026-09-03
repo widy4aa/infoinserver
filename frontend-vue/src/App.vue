@@ -1,32 +1,19 @@
 <script setup>
-import { RouterView, RouterLink } from 'vue-router'
-import { RefreshCw, Moon, Sun } from 'lucide-vue-next'
+import { RouterView, RouterLink, useRouter } from 'vue-router'
+import { Moon, Sun, LogOut } from 'lucide-vue-next'
 import ToastAlert from './components/ToastAlert.vue'
 import { useToastStore } from './stores/toastStore'
 import { useThemeStore } from './stores/themeStore'
+import { useAuthStore } from './stores/authStore'
 
-const { showConfirm, showToast } = useToastStore()
+const { showToast } = useToastStore()
 const { isDark, toggleDark } = useThemeStore()
+const { isLoggedIn, githubUser, logout } = useAuthStore()
+const router = useRouter()
 
-const handleUpdate = async () => {
-  showConfirm(
-    "Update Dashboard", 
-    "Tindakan ini akan melakukan 'git pull' dan mengompilasi ulang dashboard secara remote. Lanjutkan?",
-    async () => {
-      try {
-        const res = await fetch(`/api/system/update`, {method: 'POST'})
-        const data = await res.json()
-        if (res.ok) {
-          showToast("Success", data.message, "success")
-          setTimeout(() => window.location.reload(), 5000)
-        } else {
-          showToast("Error", data, "error")
-        }
-      } catch(e) {
-        showToast("Error", e.message, "error")
-      }
-    }
-  )
+const handleLogout = () => {
+  logout()
+  router.push('/login')
 }
 </script>
 
@@ -49,10 +36,31 @@ const handleUpdate = async () => {
               <Sun v-if="isDark" class="w-4 h-4" />
               <Moon v-else class="w-4 h-4" />
             </button>
-            <button @click="handleUpdate" class="btn-outline" title="Pull changes and rebuild">
-              <RefreshCw class="w-4 h-4" />
-              <span class="hidden sm:inline">Update Dashboard</span>
-            </button>
+
+            <!-- GitHub User Info + Logout (hanya tampil kalau sudah login) -->
+            <template v-if="isLoggedIn && githubUser">
+              <div class="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-700">
+                <!-- Avatar -->
+                <img
+                  v-if="githubUser.avatar"
+                  :src="githubUser.avatar"
+                  :alt="githubUser.name"
+                  class="w-7 h-7 rounded-full object-cover ring-2 ring-slate-200 dark:ring-slate-700"
+                />
+                <!-- Username -->
+                <span class="text-sm font-medium text-slate-700 dark:text-slate-300 hidden sm:block">
+                  {{ githubUser.name || githubUser.username }}
+                </span>
+                <!-- Logout button -->
+                <button
+                  @click="handleLogout"
+                  class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-150"
+                  title="Logout GitHub"
+                >
+                  <LogOut class="w-4 h-4" />
+                </button>
+              </div>
+            </template>
           </div>
         </div>
       </div>

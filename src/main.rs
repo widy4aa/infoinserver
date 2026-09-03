@@ -68,7 +68,9 @@ async fn main() {
 
     let public_routes = Router::new()
         .route("/api/ping", get(|| async { "pong" }))
-        .route("/api/auth/login", post(routes::auth::login_handler));
+        .route("/api/auth/login", post(routes::auth::login_handler))
+        .route("/api/auth/github", get(routes::auth::github_auth_handler))
+        .route("/api/auth/github/callback", get(routes::auth::github_callback_handler));
 
     // ── Routes with ContainerState
     let container_routes = Router::new()
