@@ -15,7 +15,7 @@ import SettingsView from '../views/SettingsView.vue'
 import UpdatesView from '../views/UpdatesView.vue'
 import LoginView from '../views/LoginView.vue'
 import AuthCallbackView from '../views/AuthCallbackView.vue'
-import { useAuthStore } from '../stores/authStore'
+import { useAuthStore, isLoggedInSync } from '../stores/authStore'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -68,21 +68,13 @@ const router = createRouter({
   ],
 })
 
-// ── Navigation Guard: proteksi semua route kecuali yang meta.public ──
+// ── Navigation Guard: dua arah ──
+// 1. Sudah login + buka /login → redirect ke home
+// 2. Belum login + buka route protected → redirect ke /login
 router.beforeEach((to) => {
-  const { isLoggedIn } = useAuthStore()
-
-  if (to.meta?.public) {
-    // Route publik — langsung lanjut
-    return true
-  }
-
-  if (!isLoggedIn.value) {
-    // Belum login GitHub → redirect ke /login
-    return { name: 'login' }
-  }
-
-  // Sudah login → lanjut
+  const loggedIn = isLoggedInSync()
+  if (to.name === 'login' && loggedIn) return { name: 'home' }
+  if (!to.meta?.public && !loggedIn) return { name: 'login' }
   return true
 })
 

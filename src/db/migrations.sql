@@ -47,3 +47,11 @@ CREATE TABLE IF NOT EXISTS cloudflare_cname_status (
     is_active BOOLEAN NOT NULL DEFAULT 1,
     added_at TEXT NOT NULL
 );
+
+-- github_users (Daftar GitHub user yang pernah login + presence tracking)
+CREATE TABLE IF NOT EXISTS github_users (
+    username   TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    avatar_url TEXT NOT NULL,
+    last_seen  INTEGER NOT NULL DEFAULT 0  -- Unix timestamp, update tiap heartbeat
+);

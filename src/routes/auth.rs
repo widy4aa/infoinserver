@@ -1,14 +1,16 @@
 // src/routes/auth.rs
-// POST /api/auth/login — verifikasi password Linux user via PAM, return JWT
-// Hanya mengizinkan user non-root yang terdaftar di grup sudo/wheel
-//
-// GET /api/auth/github         — redirect ke GitHub OAuth consent screen
-// GET /api/auth/github/callback — tukar code → GitHub token → profil → session token
+// POST /api/auth/login           — verifikasi password Linux user via PAM, return JWT
+// GET  /api/auth/github          — redirect ke GitHub OAuth consent screen
+// GET  /api/auth/github/callback — tukar code → GitHub token → profil → session token
+// POST /api/auth/github/heartbeat — update last_seen user di DB
+// GET  /api/auth/github/users    — return semua GitHub user + status online/offline
 
-use axum::{Json, http::StatusCode, response::Redirect, extract::Query};
+use axum::{Json, http::StatusCode, response::Redirect, extract::{Query, State}};
 use serde::{Deserialize, Serialize};
 use pam::Client;
 use crate::auth::jwt::create_token;
+use crate::AppState;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -143,6 +145,7 @@ struct GithubUser {
 
 /// GET /api/auth/github/callback — tukar code → access token → ambil profil → redirect frontend
 pub async fn github_callback_handler(
+    State(state): State<AppState>,
     Query(params): Query<GithubCallbackQuery>,
 ) -> Result<Redirect, (StatusCode, Json<serde_json::Value>)> {
     // Jika user menolak di GitHub
@@ -211,6 +214,23 @@ pub async fn github_callback_handler(
 
     let display_name = github_user.name.unwrap_or_else(|| github_user.login.clone());
 
+    // Simpan/update user ke DB (upsert)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let _ = sqlx::query(
+        "INSERT INTO github_users (username, name, avatar_url, last_seen)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(username) DO UPDATE SET name=excluded.name, avatar_url=excluded.avatar_url, last_seen=excluded.last_seen"
+    )
+    .bind(&github_user.login)
+    .bind(&display_name)
+    .bind(&github_user.avatar_url)
+    .bind(now)
+    .execute(&state.db_pool)
+    .await;
+
     // Encode payload sebagai JSON lalu sign dengan HMAC-like approach menggunakan jsonwebtoken
     let session_claims = serde_json::json!({
         "sub": github_user.login,
@@ -241,4 +261,96 @@ pub async fn github_callback_handler(
     );
 
     Ok(Redirect::temporary(&frontend_url))
+}
+
+// ── GitHub Presence (Heartbeat + Users List) ──────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct HeartbeatRequest {
+    pub token: String,
+}
+
+/// POST /api/auth/github/heartbeat — update last_seen user dari session token
+pub async fn github_heartbeat_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<HeartbeatRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let session_secret = std::env::var("GITHUB_SESSION_SECRET")
+        .unwrap_or_else(|_| "infoinserver-session-secret".to_string());
+
+    // Verifikasi session token untuk extract username
+    let mut validation = jsonwebtoken::Validation::default();
+    validation.validate_exp = true;
+
+    let token_data = jsonwebtoken::decode::<serde_json::Value>(
+        &payload.token,
+        &jsonwebtoken::DecodingKey::from_secret(session_secret.as_bytes()),
+        &validation,
+    ).map_err(|_| (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({ "error": "Invalid session token" })),
+    ))?;
+
+    let username = token_data.claims
+        .get("sub")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": "Invalid token claims" })),
+        ))?
+        .to_string();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    sqlx::query("UPDATE github_users SET last_seen = ? WHERE username = ?")
+        .bind(now)
+        .bind(&username)
+        .execute(&state.db_pool)
+        .await
+        .map_err(|e| (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("DB error: {}", e) })),
+        ))?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Serialize)]
+pub struct GithubUserPresence {
+    pub username: String,
+    pub name: String,
+    pub avatar_url: String,
+    pub online: bool,
+    pub last_seen: i64,
+}
+
+/// GET /api/auth/github/users — return semua GitHub user + status online/offline
+/// Online = last_seen dalam 60 detik terakhir
+pub async fn github_users_handler(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<GithubUserPresence>>, (StatusCode, Json<serde_json::Value>)> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let rows = sqlx::query_as::<_, (String, String, String, i64)>(
+        "SELECT username, name, avatar_url, last_seen FROM github_users ORDER BY last_seen DESC"
+    )
+    .fetch_all(&state.db_pool)
+    .await
+    .map_err(|e| (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(serde_json::json!({ "error": format!("DB error: {}", e) })),
+    ))?;
+
+    let users = rows.into_iter().map(|(username, name, avatar_url, last_seen)| {
+        let online = (now - last_seen) < 60;
+        GithubUserPresence { username, name, avatar_url, online, last_seen }
+    }).collect();
+
+    Ok(Json(users))
 }

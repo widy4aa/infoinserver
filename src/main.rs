@@ -69,8 +69,14 @@ async fn main() {
     let public_routes = Router::new()
         .route("/api/ping", get(|| async { "pong" }))
         .route("/api/auth/login", post(routes::auth::login_handler))
-        .route("/api/auth/github", get(routes::auth::github_auth_handler))
-        .route("/api/auth/github/callback", get(routes::auth::github_callback_handler));
+        .route("/api/auth/github", get(routes::auth::github_auth_handler));
+
+    // ── GitHub routes dengan AppState tapi tanpa JWT middleware ──
+    let github_routes = Router::new()
+        .route("/api/auth/github/callback", get(routes::auth::github_callback_handler))
+        .route("/api/auth/github/heartbeat", post(routes::auth::github_heartbeat_handler))
+        .route("/api/auth/github/users", get(routes::auth::github_users_handler))
+        .with_state(state.clone());
 
     // ── Routes with ContainerState
     let container_routes = Router::new()
@@ -188,8 +194,13 @@ async fn main() {
 
     let app = Router::new()
         .merge(public_routes)
+        .merge(github_routes)
         .merge(protected_routes)
-        .fallback_service(ServeDir::new("static"))
+        .fallback_service(
+            ServeDir::new("static").fallback(
+                axum::routing::get_service(tower_http::services::ServeFile::new("static/index.html"))
+            )
+        )
         .layer(cors);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
