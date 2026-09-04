@@ -42,12 +42,6 @@ pub struct JailConfig {
     pub findtime: Option<String>,
 }
 
-#[derive(Deserialize)]
-pub struct JailToggleRequest {
-    pub name: String,
-    pub enabled: bool,
-}
-
 pub async fn get_status_handler(
     Extension(auth): Extension<AuthUser>,
 ) -> Result<Json<Fail2BanStatus>, (StatusCode, String)> {

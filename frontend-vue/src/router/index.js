@@ -25,13 +25,13 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginView,
-      meta: { public: true },
+      meta: { public: true, fullscreen: true },
     },
     {
       path: '/auth/callback',
       name: 'auth-callback',
       component: AuthCallbackView,
-      meta: { public: true },
+      meta: { public: true, fullscreen: true },
     },
 
     // ── Protected routes (butuh GitHub login) ──

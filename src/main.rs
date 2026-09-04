@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::net::TcpListener;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::services::ServeDir;
+use tower_http::cors::{CorsLayer, AllowOrigin};
+use axum::http::{HeaderValue, Method, header};
 
 mod routes;
 mod services;
@@ -61,10 +61,12 @@ async fn main() {
 
     background::scheduler::start_background_tasks(db_pool).await;
 
+    let cors_origin = std::env::var("CORS_ORIGIN").unwrap_or_else(|_| "http://localhost:3000".to_string());
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(AllowOrigin::exact(HeaderValue::from_str(&cors_origin).expect("Invalid CORS_ORIGIN")))
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE, header::ACCEPT])
+        .allow_credentials(true);
 
     let public_routes = Router::new()
         .route("/api/ping", get(|| async { "pong" }))
@@ -196,11 +198,6 @@ async fn main() {
         .merge(public_routes)
         .merge(github_routes)
         .merge(protected_routes)
-        .fallback_service(
-            ServeDir::new("static").fallback(
-                axum::routing::get_service(tower_http::services::ServeFile::new("static/index.html"))
-            )
-        )
         .layer(cors);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());

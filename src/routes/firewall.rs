@@ -84,16 +84,12 @@ pub async fn manage_ufw_rule_handler(
     Extension(auth): Extension<AuthUser>,
     Json(payload): Json<UfwActionRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    if !["allow", "deny", "delete"].contains(&payload.action.as_str()) {
+    if !["allow", "deny"].contains(&payload.action.as_str()) {
         return Err((StatusCode::BAD_REQUEST, "Invalid action".to_string()));
     }
 
     if !payload.port.chars().all(|c| c.is_ascii_alphanumeric() || c == '/') {
         return Err((StatusCode::BAD_REQUEST, "Invalid port format".to_string()));
-    }
-
-    if payload.action == "delete" {
-        return Err((StatusCode::NOT_IMPLEMENTED, "Use CLI for advanced rule deletion".to_string()));
     }
 
     let password = auth.0.pwd.clone();

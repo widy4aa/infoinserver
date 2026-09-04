@@ -150,7 +150,8 @@ pub async fn github_callback_handler(
 ) -> Result<Redirect, (StatusCode, Json<serde_json::Value>)> {
     // Jika user menolak di GitHub
     if let Some(err) = params.error {
-        let frontend_url = format!("/login?error={}", urlencoding::encode(&err));
+        let base = std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
+        let frontend_url = format!("{}/login?error={}", base, urlencoding::encode(&err));
         return Ok(Redirect::temporary(&frontend_url));
     }
 
@@ -252,8 +253,10 @@ pub async fn github_callback_handler(
     ))?;
 
     // Redirect ke frontend dengan data session di query params
+    let base = std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
     let frontend_url = format!(
-        "/auth/callback?token={}&user={}&name={}&avatar={}",
+        "{}/auth/callback?token={}&user={}&name={}&avatar={}",
+        base,
         urlencoding::encode(&session_token),
         urlencoding::encode(&github_user.login),
         urlencoding::encode(&display_name),

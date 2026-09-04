@@ -12,7 +12,7 @@ use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 use crate::auth::jwt_middleware::AuthUser;
 use crate::services::file_manager::{
-    list_directory, resolve_and_validate_path, resolve_path_safe,
+    list_directory, resolve_path_safe,
     check_write_permission, get_removable_mounts, FileInfo
 };
 

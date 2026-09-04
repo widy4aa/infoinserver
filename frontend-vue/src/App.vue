@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { RouterView, RouterLink, useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { RouterView, RouterLink, useRouter, useRoute } from 'vue-router'
 import { Moon, Sun, LogOut, ChevronDown } from 'lucide-vue-next'
 import ToastAlert from './components/ToastAlert.vue'
 import { useToastStore } from './stores/toastStore'
@@ -12,6 +12,8 @@ const { showToast } = useToastStore()
 const { isDark, toggleDark } = useThemeStore()
 const { isLoggedIn, githubUser, logout, getToken } = useAuthStore()
 const router = useRouter()
+const route = useRoute()
+const isFullscreen = computed(() => !!route.meta?.fullscreen)
 
 // ── Heartbeat ──────────────────────────────────────────────────────
 useHeartbeat(getToken)
@@ -28,12 +30,15 @@ const fetchUsers = async () => {
 }
 
 let usersTimer = null
-onMounted(() => {
-  if (isLoggedIn.value) {
+watch(isLoggedIn, (loggedIn) => {
+  if (loggedIn) {
     fetchUsers()
     usersTimer = setInterval(fetchUsers, USERS_INTERVAL)
+  } else {
+    if (usersTimer) clearInterval(usersTimer)
+    allUsers.value = []
   }
-})
+}, { immediate: true })
 onUnmounted(() => { if (usersTimer) clearInterval(usersTimer) })
 
 // Online duluan, lalu offline — urut last_seen desc
@@ -71,9 +76,9 @@ const handleLogout = () => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
+  <div class="min-h-screen flex flex-col" :class="isFullscreen ? '' : 'bg-slate-100 dark:bg-slate-950'">
     <!-- Top Navigation -->
-    <header class="bg-white border-b border-slate-200 sticky top-0 z-40 dark:bg-slate-900 dark:border-slate-800">
+    <header v-if="!isFullscreen" class="bg-white border-b border-slate-200 sticky top-0 z-40 dark:bg-slate-900 dark:border-slate-800">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between items-center h-16">
           <RouterLink to="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
@@ -192,7 +197,7 @@ const handleLogout = () => {
     </header>
 
     <!-- Main Content -->
-    <main class="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main :class="isFullscreen ? 'flex-1' : 'flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8'">
       <RouterView />
     </main>
 

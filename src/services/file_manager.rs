@@ -35,20 +35,6 @@ pub fn resolve_path_safe(requested_path: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-/// Fungsi lama untuk kompatibilitas — sekarang hanya memanggil resolve_path_safe
-pub fn resolve_and_validate_path(_base_root: &str, requested_subpath: &str) -> Result<PathBuf, String> {
-    // Jika subpath diawali dengan /, gunakan sebagai absolute path
-    let path = if requested_subpath.starts_with('/') {
-        requested_subpath.to_string()
-    } else {
-        // Legacy: gabungkan dengan base_root
-        let root = Path::new(_base_root).canonicalize().map_err(|_| "Invalid root directory".to_string())?;
-        format!("{}/{}", root.display(), requested_subpath)
-    };
-
-    resolve_path_safe(&path)
-}
-
 /// Tentukan apakah path bisa ditulis:
 /// - Berada di dalam home_root (FILE_ROOT) → writable
 /// - Berada di dalam salah satu removable mount → writable

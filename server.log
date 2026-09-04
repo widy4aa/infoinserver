@@ -1,8 +1,6 @@
 Container runtime: podman v6.1.0 (compose: podman compose)
 Server running on http://0.0.0.0:8080
 Scheduler: Running scheduled speedtest...
-Scheduler: Speedtest failed - Speedtest error: Cannot retrieve speedtest configuration
-ERROR: [Errno 104] Connection reset by peer
-
+Scheduler: Speedtest success - D: 153.50 Mbps, U: 17.68 Mbps
 Scheduler: Running scheduled speedtest...
-Scheduler: Speedtest success - D: 20.54 Mbps, U: 16.54 Mbps
+Scheduler: Speedtest success - D: 146.58 Mbps, U: 108.55 Mbps
