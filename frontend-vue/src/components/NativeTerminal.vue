@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { X, Loader2, Terminal as TerminalIcon, Plus } from 'lucide-vue-next'
 import { useServerStore } from '../stores/serverStore'
+import { isTokenExpired } from '../composables/useApi'
 import '@xterm/xterm/css/xterm.css'
 
 const props = defineProps({ visible: Boolean })
@@ -80,11 +81,26 @@ const initTab = async (tab) => {
     tab.ws.onclose = () => {
       tab.isLoading = false
       tab.term?.writeln('\n\r\x1b[31mConnection Closed.\x1b[0m')
+      // Cek apakah putus karena token expired
+      const currentToken = getToken(activeServerId.value)
+      if (isTokenExpired(currentToken, 0)) {
+        window.dispatchEvent(new CustomEvent('auth:expired', {
+          detail: { serverId: activeServerId.value }
+        }))
+      }
     }
 
     tab.ws.onerror = () => {
       tab.isLoading = false
-      tab.connectionError = 'WebSocket connection failed. Ensure backend is running.'
+      const currentToken = getToken(activeServerId.value)
+      if (isTokenExpired(currentToken, 0)) {
+        tab.connectionError = 'Session expired. Please login again.'
+        window.dispatchEvent(new CustomEvent('auth:expired', {
+          detail: { serverId: activeServerId.value }
+        }))
+      } else {
+        tab.connectionError = 'WebSocket connection failed. Ensure backend is running.'
+      }
       tab.term?.writeln('\n\r\x1b[31mConnection Error.\x1b[0m')
     }
 

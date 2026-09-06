@@ -129,6 +129,12 @@ onMounted(() => {
   
   checkPing() // Immediate check
   pingInterval = setInterval(checkPing, 3000)
+
+  // Jika token tidak ada saat pertama mount (misal setelah tab ditutup/dibuka ulang),
+  // langsung tampilkan LoginModal tanpa perlu tunggu API call gagal dulu
+  if (!isAuthenticated(sid)) {
+    showLogin.value = true
+  }
 })
 
 onUnmounted(() => {

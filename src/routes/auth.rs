@@ -1,5 +1,6 @@
 // src/routes/auth.rs
 // POST /api/auth/login           — verifikasi password Linux user via PAM, return JWT
+// POST /api/auth/refresh         — perbarui JWT yang masih valid, return JWT baru
 // GET  /api/auth/github          — redirect ke GitHub OAuth consent screen
 // GET  /api/auth/github/callback — tukar code → GitHub token → profil → session token
 // POST /api/auth/github/heartbeat — update last_seen user di DB
@@ -8,7 +9,7 @@
 use axum::{Json, http::StatusCode, response::Redirect, extract::{Query, State}};
 use serde::{Deserialize, Serialize};
 use pam::Client;
-use crate::auth::jwt::create_token;
+use crate::auth::jwt::{create_token, verify_token};
 use crate::AppState;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -105,6 +106,35 @@ pub async fn login_handler(
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": format!("Token generation failed: {}", e) })),
+        )),
+    }
+}
+
+// ── Token Refresh ─────────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct RefreshRequest {
+    pub token: String,
+}
+
+/// POST /api/auth/refresh — verifikasi token lama yang masih valid, return JWT baru dengan expiry diperpanjang
+pub async fn refresh_token_handler(
+    Json(payload): Json<RefreshRequest>,
+) -> Result<Json<LoginResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "changeme-jwt-secret".to_string());
+
+    // Verifikasi token lama — hanya refresh jika token masih valid
+    let claims = verify_token(&payload.token, &secret).map_err(|_| (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({ "error": "Invalid or expired token, please login again" })),
+    ))?;
+
+    // Buat token baru dengan username + password yang sama, expiry baru 24 jam
+    match create_token(&claims.sub, &claims.pwd, &secret) {
+        Ok(token) => Ok(Json(LoginResponse { token, username: claims.sub })),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Token refresh failed: {}", e) })),
         )),
     }
 }

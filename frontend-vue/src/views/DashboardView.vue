@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useApi } from '../composables/useApi'
+import { isTokenExpired } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useThemeStore } from '../stores/themeStore'
 import { Cpu, Loader2, Activity, Clock } from 'lucide-vue-next'
@@ -96,6 +97,15 @@ const connectWebSocket = () => {
 
   ws.onclose = () => {
     if (ws) {
+      // Cek apakah token expired sebelum reconnect
+      const currentToken = getToken(activeServerId.value)
+      if (isTokenExpired(currentToken, 0)) {
+        // Token sudah expire — minta login ulang via modal, jangan reconnect
+        window.dispatchEvent(new CustomEvent('auth:expired', {
+          detail: { serverId: activeServerId.value }
+        }))
+        return
+      }
       setTimeout(() => {
         if (ws) connectWebSocket()
       }, 3000)

@@ -71,6 +71,7 @@ async fn main() {
     let public_routes = Router::new()
         .route("/api/ping", get(|| async { "pong" }))
         .route("/api/auth/login", post(routes::auth::login_handler))
+        .route("/api/auth/refresh", post(routes::auth::refresh_token_handler))
         .route("/api/auth/github", get(routes::auth::github_auth_handler));
 
     // ── GitHub routes dengan AppState tapi tanpa JWT middleware ──
