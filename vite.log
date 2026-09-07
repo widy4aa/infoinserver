@@ -1,0 +1,22 @@
+$ vite --port 5173
+NODE_ENV=production is not supported in the .env file. Only NODE_ENV=development is supported to create a development build of your project. If you need to set process.env.NODE_ENV, you can set it in the Vite config instead.
+7:19:04 PM [vite] (client) Re-optimizing dependencies because lockfile has changed
+
+  VITE v8.2.2  ready in 447 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+7:19:48 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:20:56 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:22:05 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:23:14 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:23:25 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:24:25 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:25:04 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:26:00 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:26:41 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:27:11 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:28:09 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:29:18 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:29:26 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css
+7:29:36 PM [vite] (client) hmr update /src/views/HomeView.vue, /src/assets/main.css

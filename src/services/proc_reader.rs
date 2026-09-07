@@ -59,6 +59,9 @@ pub struct SystemMetrics {
     pub global_cpu_usage: f32,
     pub total_memory: u64,
     pub used_memory: u64,
+    pub total_swap: u64,
+    pub used_swap: u64,
+    pub cpu_temp: Option<f32>,
     pub disks: Vec<DiskInfo>,
     pub current_user: String,
 }
@@ -306,10 +309,85 @@ pub fn read_network_interfaces() -> Vec<NetworkInterface> {
     ifaces
 }
 
+/// Baca swap dari /proc/meminfo — returns (total_bytes, used_bytes)
+pub fn read_swap() -> (u64, u64) {
+    let content = match fs::read_to_string("/proc/meminfo") {
+        Ok(c) => c,
+        Err(_) => return (0, 0),
+    };
+    let mut total_kb = 0u64;
+    let mut free_kb = 0u64;
+    for line in content.lines() {
+        let mut parts = line.splitn(2, ':');
+        if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
+            let kb: u64 = val.trim().split_whitespace().next()
+                .and_then(|v| v.parse().ok()).unwrap_or(0);
+            match key {
+                "SwapTotal" => total_kb = kb,
+                "SwapFree"  => free_kb  = kb,
+                _ => {}
+            }
+        }
+    }
+    let total = total_kb * 1024;
+    let used  = total.saturating_sub(free_kb * 1024);
+    (total, used)
+}
+
+/// Baca CPU temperature dari /sys/class/hwmon atau /sys/class/thermal
+pub fn read_cpu_temp() -> Option<f32> {
+    // Coba hwmon dulu — cari coretemp / k10temp / acpitz
+    if let Ok(entries) = fs::read_dir("/sys/class/hwmon") {
+        let mut candidates: Vec<(String, f32)> = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name_path = path.join("name");
+            let name = fs::read_to_string(&name_path)
+                .unwrap_or_default().trim().to_string();
+            // Prioritas: coretemp (Intel), k10temp (AMD), acpitz
+            if matches!(name.as_str(), "coretemp" | "k10temp" | "acpitz" | "cpu_thermal") {
+                // Cari temp*_input file
+                if let Ok(files) = fs::read_dir(&path) {
+                    for f in files.flatten() {
+                        let fname = f.file_name().to_string_lossy().to_string();
+                        if fname.ends_with("_input") && fname.starts_with("temp") {
+                            if let Ok(raw) = fs::read_to_string(f.path()) {
+                                if let Ok(millideg) = raw.trim().parse::<i64>() {
+                                    let celsius = millideg as f32 / 1000.0;
+                                    if celsius > 0.0 && celsius < 150.0 {
+                                        candidates.push((name.clone(), celsius));
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Pilih yang paling relevan
+        if let Some((_, temp)) = candidates.into_iter().find(|(n, _)| n == "coretemp" || n == "k10temp") {
+            return Some(temp);
+        }
+    }
+    // Fallback: /sys/class/thermal/thermal_zone0
+    if let Ok(raw) = fs::read_to_string("/sys/class/thermal/thermal_zone0/temp") {
+        if let Ok(millideg) = raw.trim().parse::<i64>() {
+            let celsius = millideg as f32 / 1000.0;
+            if celsius > 0.0 && celsius < 150.0 {
+                return Some(celsius);
+            }
+        }
+    }
+    None
+}
+
 /// Entry point utama — kumpulkan semua metrics
 pub fn get_system_metrics() -> SystemMetrics {
     let (cpu_usage, cpu_cores) = read_cpu_usage();
     let (total_memory, used_memory) = read_memory();
+    let (total_swap, used_swap) = read_swap();
+    let cpu_temp = read_cpu_temp();
     let current_user = std::env::var("USER")
         .or_else(|_| std::env::var("LOGNAME"))
         .unwrap_or_else(|_| "unknown".to_string());
@@ -324,6 +402,9 @@ pub fn get_system_metrics() -> SystemMetrics {
         global_cpu_usage: cpu_usage,
         total_memory,
         used_memory,
+        total_swap,
+        used_swap,
+        cpu_temp,
         disks: read_disks(),
         current_user,
     }

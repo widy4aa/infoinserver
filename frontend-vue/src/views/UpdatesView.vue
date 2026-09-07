@@ -82,7 +82,7 @@ onUnmounted(() => {
           <h2 class="card-title mb-1"><Download class="w-5 h-5 text-brand-500" /> OS Package Manager</h2>
           <p class="text-xs text-slate-500">Check and install security updates for your Linux distribution.</p>
         </div>
-        <button @click="checkUpdates" class="btn-outline" :disabled="isChecking">
+        <button @click="checkUpdates" class="btn-secondary" :disabled="isChecking">
           <RefreshCw :class="{'animate-spin': isChecking}" class="w-4 h-4" />
           {{ isChecking ? 'Checking...' : 'Check Updates' }}
         </button>
@@ -112,11 +112,11 @@ onUnmounted(() => {
         <div v-if="updateInfo.updatable_count > 0" class="space-y-4">
           <div class="flex items-center justify-between">
             <h3 class="font-bold text-sm">Available Updates</h3>
-            <button @click="startUpgrade" class="btn-primary bg-amber-500 hover:bg-amber-600 text-white border-none">
+            <button @click="startUpgrade" class="btn-warning">
               <Download class="w-4 h-4" /> Upgrade All Packages
             </button>
           </div>
-          <div class="bg-[#0f111a] text-slate-300 font-mono text-[11px] p-4 rounded-lg overflow-y-auto max-h-96 shadow-inner">
+          <div class="bg-[#0d1117] text-slate-300 font-mono text-[11px] p-4 rounded-lg overflow-y-auto max-h-96 shadow-inner">
             <div v-for="(pkg, i) in updateInfo.details" :key="i" class="py-0.5 hover:bg-white/5 px-1">
               {{ pkg }}
             </div>

@@ -4,8 +4,23 @@ import { useStorage } from '@vueuse/core'
 // State Global diletakkan di luar fungsi
 const activeServerId = useStorage('active-server-id', '1')
 const servers = useStorage('monitoring-servers', [
-  { id: '1', name: 'Local Server', url: 'http://127.0.0.1:8080' }
+  { id: '1', name: 'Local Server', url: 'http://127.0.0.1:3000' }
 ])
+
+// ── Migrasi otomatis URL lama (port 8080) ke port 3000 (Bun proxy) ──
+// Rust backend tidak boleh diakses langsung dari browser — semua lewat Bun
+const migrateServerUrls = () => {
+  let changed = false
+  servers.value = servers.value.map(s => {
+    if (s.url && s.url.includes(':8080')) {
+      changed = true
+      return { ...s, url: s.url.replace(':8080', ':3000') }
+    }
+    return s
+  })
+  return changed
+}
+migrateServerUrls()
 
 // Multi-user token storage
 // Struktur baru: { "server-1": { activeUser: "infratek", users: { "infratek": "token...", "webmaster": "token..." } } }
@@ -34,7 +49,7 @@ export const useServerStore = () => {
 
   const getActiveServerUrl = () => {
     const server = servers.value.find(s => s.id === activeServerId.value)
-    return server ? server.url : 'http://127.0.0.1:8080'
+    return server ? server.url : 'http://127.0.0.1:3000'
   }
 
   // ── Token management (Multi-user) ────────────────────────────

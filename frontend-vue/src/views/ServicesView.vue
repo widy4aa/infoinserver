@@ -145,12 +145,12 @@ onUnmounted(() => {
             <Search class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input v-model="searchQuery" type="text" placeholder="Search service..." class="input-field !pl-9">
           </div>
-          <select v-model="filterActive" class="input-field w-auto">
+          <select v-model="filterActive" class="input-field w-auto py-1.5 text-xs">
             <option value="all">All</option>
             <option value="running">Running</option>
             <option value="failed">Failed</option>
           </select>
-          <button @click="fetchServices" class="btn-outline px-3" title="Refresh">
+          <button @click="fetchServices" class="btn-secondary px-3" title="Refresh">
             <RefreshCw class="w-4 h-4" />
           </button>
         </div>
@@ -162,7 +162,7 @@ onUnmounted(() => {
 
       <div v-else class="overflow-y-auto overflow-x-hidden flex-1 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 relative">
         <table class="w-full relative">
-          <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800/90 shadow-sm z-10">
+          <thead class="sticky top-0 bg-slate-50 dark:bg-slate-800/90 z-10">
             <tr>
               <th class="table-th w-1/2">Unit Name</th>
               <th class="table-th w-24">Status</th>
@@ -187,9 +187,9 @@ onUnmounted(() => {
                 <div class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 capitalize">{{ s.sub }}</div>
               </td>
               <td class="table-td text-right sticky right-0 bg-white dark:bg-slate-800 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.04)]">                <div class="flex items-center justify-end gap-1">
-                  <button @click="handleAction('start', s.unit)" class="btn-icon-green" title="Start" :disabled="s.active === 'active'"><Play class="w-3 h-3" /></button>
-                  <button @click="handleAction('stop', s.unit)" class="btn-icon-amber" title="Stop" :disabled="s.active !== 'active'"><Square class="w-3 h-3" /></button>
-                  <button @click="handleAction('restart', s.unit)" class="btn-icon-blue" title="Restart"><RefreshCw class="w-3 h-3" /></button>
+                  <button @click="handleAction('start', s.unit)" class="btn-icon-success" title="Start" :disabled="s.active === 'active'"><Play class="w-3 h-3" /></button>
+                  <button @click="handleAction('stop', s.unit)" class="btn-icon-warning" title="Stop" :disabled="s.active !== 'active'"><Square class="w-3 h-3" /></button>
+                  <button @click="handleAction('restart', s.unit)" class="btn-icon-primary" title="Restart"><RefreshCw class="w-3 h-3" /></button>
                   
                   <div class="w-px h-6 bg-slate-200 mx-1"></div>
                   
@@ -233,7 +233,7 @@ onUnmounted(() => {
               <span class="text-xs font-bold" :class="processSortBy === 'cpu' ? 'text-brand-600' : 'text-slate-600'">{{ p.cpu_usage.toFixed(1) }}%</span>
               <span class="text-[10px]" :class="processSortBy === 'ram' ? 'text-purple-600 font-bold' : 'text-slate-500'">{{ (p.memory_bytes/1048576).toFixed(1) }} MB</span>
             </div>
-            <button @click="killProcess(p.pid)" class="btn-icon-red shrink-0 w-7 h-7" title="Kill Process">
+            <button @click="killProcess(p.pid)" class="btn-icon-danger shrink-0 w-7 h-7" title="Kill Process">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </div>

@@ -75,14 +75,21 @@ const handleAdd = async () => {
   }
 }
 
+// ── Rename Modal ──────────────────────────────────────────
+const renameModal = ref({ visible: false, value: '', serverId: null })
+
 // ── Server-specific actions ───────────────────────────────
 const handleRenameServer = () => {
   const currentName = servers.value.find(s => s.id === route.params.id)?.name || ''
-  const newNameStr = prompt('Masukkan nama baru untuk server ini:', currentName)
-  if (newNameStr !== null && newNameStr.trim() !== '') {
-    updateServerName(route.params.id, newNameStr.trim())
+  renameModal.value = { visible: true, value: currentName, serverId: route.params.id }
+}
+
+const confirmRename = () => {
+  if (renameModal.value.value.trim() !== '') {
+    updateServerName(renameModal.value.serverId, renameModal.value.value.trim())
     showToast('Success', 'Server renamed successfully', 'success')
   }
+  renameModal.value.visible = false
 }
 
 const handleRemoveServer = () => {
@@ -216,14 +223,14 @@ const handleResetFail2ban = () => {
 
         <!-- Server Name -->
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Server Name / Alias</label>
+          <label class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Server Name / Alias</label>
           <input v-model="newName" type="text" placeholder="e.g. VPS Singapore"
             class="input-field" :disabled="isAdding" />
         </div>
 
         <!-- IP / URL -->
         <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Backend IP / URL</label>
+          <label class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Backend IP / URL</label>
           <input v-model="newUrl" type="text" placeholder="100.127.55.109:8080"
             class="input-field" :disabled="isAdding" />
           <p class="text-xs text-slate-400">Cukup masukkan IP:Port — http:// akan ditambahkan otomatis</p>
@@ -232,7 +239,7 @@ const handleResetFail2ban = () => {
         <!-- Username + Password -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div class="flex flex-col gap-1">
-            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Username</label>
+            <label class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Username</label>
             <div class="relative">
               <User class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input v-model="newUser" type="text" placeholder="e.g. root, ubuntu"
@@ -240,7 +247,7 @@ const handleResetFail2ban = () => {
             </div>
           </div>
           <div class="flex flex-col gap-1">
-            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
+            <label class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Password</label>
             <div class="relative">
               <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input v-model="newPass" type="password" placeholder="OS user password"
@@ -269,7 +276,7 @@ const handleResetFail2ban = () => {
             <div class="font-medium text-slate-800 dark:text-slate-200">Rename Server Alias</div>
             <div class="text-xs text-slate-500 dark:text-slate-400">Change how this server appears on the home screen</div>
           </div>
-          <button @click="handleRenameServer" class="btn-outline whitespace-nowrap">
+          <button @click="handleRenameServer" class="btn-secondary whitespace-nowrap">
             <Edit2 class="w-4 h-4" /> Rename
           </button>
         </div>
@@ -279,7 +286,7 @@ const handleResetFail2ban = () => {
             <div class="font-medium text-slate-800 dark:text-slate-200">Remove Server</div>
             <div class="text-xs text-slate-500 dark:text-slate-400">Remove this server from your dashboard list</div>
           </div>
-          <button @click="handleRemoveServer" class="btn-destructive whitespace-nowrap">
+          <button @click="handleRemoveServer" class="btn-danger whitespace-nowrap">
             <Trash2 class="w-4 h-4" /> Remove
           </button>
         </div>
@@ -297,7 +304,7 @@ const handleResetFail2ban = () => {
             <div class="font-medium text-slate-800 dark:text-slate-200">Update Dashboard Backend</div>
             <div class="text-xs text-slate-500 dark:text-slate-400">Run git pull &amp; cargo build --release remotely</div>
           </div>
-          <button @click="handleUpdate" class="btn-outline whitespace-nowrap">
+          <button @click="handleUpdate" class="btn-secondary whitespace-nowrap">
             <RefreshCw class="w-4 h-4" /> Update Backend
           </button>
         </div>
@@ -307,7 +314,7 @@ const handleResetFail2ban = () => {
             <div class="font-medium text-red-800 dark:text-red-400">Reboot Host</div>
             <div class="text-xs text-red-600 dark:text-red-500">Reboot the physical operating system</div>
           </div>
-          <button @click="handleReboot" class="btn-destructive whitespace-nowrap">
+          <button @click="handleReboot" class="btn-danger whitespace-nowrap">
             <Power class="w-4 h-4" /> Reboot Server
           </button>
         </div>
@@ -333,7 +340,7 @@ const handleResetFail2ban = () => {
               <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Remove tunnel, config files, credentials, and auth certificate (cert.pem)</div>
             </div>
           </div>
-          <button @click="handleResetCloudflare" class="btn-destructive whitespace-nowrap shrink-0" :disabled="isResettingCloudflare">
+          <button @click="handleResetCloudflare" class="btn-danger whitespace-nowrap shrink-0" :disabled="isResettingCloudflare">
             <Loader2 v-if="isResettingCloudflare" class="w-4 h-4 animate-spin" />
             <Cloud v-else class="w-4 h-4" />
             {{ isResettingCloudflare ? 'Resetting...' : 'Reset Cloudflare' }}
@@ -351,7 +358,7 @@ const handleResetFail2ban = () => {
               <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Disable UFW and remove all firewall rules (restore to default)</div>
             </div>
           </div>
-          <button @click="handleResetUfw" class="btn-destructive whitespace-nowrap shrink-0" :disabled="isResettingUfw">
+          <button @click="handleResetUfw" class="btn-danger whitespace-nowrap shrink-0" :disabled="isResettingUfw">
             <Loader2 v-if="isResettingUfw" class="w-4 h-4 animate-spin" />
             <Shield v-else class="w-4 h-4" />
             {{ isResettingUfw ? 'Resetting...' : 'Reset UFW' }}
@@ -369,7 +376,7 @@ const handleResetFail2ban = () => {
               <div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Delete jail.local and restart Fail2Ban (remove all custom jails and bans)</div>
             </div>
           </div>
-          <button @click="handleResetFail2ban" class="btn-destructive whitespace-nowrap shrink-0" :disabled="isResettingFail2ban">
+          <button @click="handleResetFail2ban" class="btn-danger whitespace-nowrap shrink-0" :disabled="isResettingFail2ban">
             <Loader2 v-if="isResettingFail2ban" class="w-4 h-4 animate-spin" />
             <Ban v-else class="w-4 h-4" />
             {{ isResettingFail2ban ? 'Resetting...' : 'Reset Fail2Ban' }}
@@ -377,6 +384,33 @@ const handleResetFail2ban = () => {
         </div>
       </div>
     </section>
+
+    <!-- ── Rename Server Modal ────────────────────────── -->
+    <Teleport to="body">
+      <div v-if="renameModal.visible" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4 bg-slate-900/50 dark:bg-slate-950/80">
+        <div class="rounded-xl w-full max-w-sm overflow-hidden bg-white dark:bg-slate-800" style="box-shadow: var(--shadow-modal)">
+          <div class="p-4 border-b flex justify-between items-center bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-700">
+            <h3 class="font-bold flex items-center gap-2 text-slate-800 dark:text-slate-100">
+              <Edit2 class="w-4 h-4 text-brand-500" /> Rename Server
+            </h3>
+            <button @click="renameModal.visible = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg leading-none">✕</button>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">New Server Name</label>
+              <input v-model="renameModal.value" type="text" class="input-field"
+                placeholder="e.g. VPS Singapore"
+                @keydown.enter="confirmRename"
+                @keydown.esc="renameModal.visible = false" />
+            </div>
+            <div class="flex justify-end gap-2 pt-1">
+              <button @click="renameModal.visible = false" class="btn-secondary">Cancel</button>
+              <button @click="confirmRename" class="btn-primary">Save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
   </div>
 </template>

@@ -40,7 +40,7 @@ onMounted(() => {
 <template>
   <div class="min-h-screen flex items-center justify-center">
     <div class="text-center">
-      <div class="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+      <div class="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
       <p class="text-sm text-slate-500">Signing you in...</p>
     </div>
   </div>

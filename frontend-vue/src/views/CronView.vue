@@ -187,9 +187,9 @@ onMounted(fetchCron)
                 </td>
                 <td class="table-td font-mono text-xs text-slate-600 dark:text-slate-300 break-all">{{ job.command }}</td>
                 <td class="table-td text-right">
-                  <div class="flex items-center justify-end gap-1.5 opacity-50 group-hover:opacity-100 transition-opacity">
-                    <button @click="openEditModal(job, index)" class="btn-icon-blue" title="Edit"><Edit3 class="w-3 h-3" /></button>
-                    <button @click="deleteJob(index)" class="btn-icon-red" title="Delete"><Trash2 class="w-3 h-3" /></button>
+                  <div class="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button @click="openEditModal(job, index)" class="btn-icon-primary" title="Edit"><Edit3 class="w-3 h-3" /></button>
+                    <button @click="deleteJob(index)" class="btn-icon-danger" title="Delete"><Trash2 class="w-3 h-3" /></button>
                   </div>
                 </td>
               </tr>

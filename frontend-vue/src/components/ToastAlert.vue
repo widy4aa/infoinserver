@@ -65,7 +65,7 @@ const closeColor = computed(() => {
         </div>
       </div>
       <div class="flex justify-end gap-2 px-5 py-4 border-t" :class="footerBgClass">
-        <button @click="state.onCancel" class="btn-outline">Cancel</button>
+        <button @click="state.onCancel" class="btn-secondary">Cancel</button>
         <button @click="state.onConfirm" class="btn-primary" :class="state.title.includes('DANGER') ? '!bg-red-600 hover:!bg-red-700' : ''">Confirm</button>
       </div>
     </div>

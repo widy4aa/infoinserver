@@ -146,6 +146,7 @@ const f2bActiveTab = ref('logs')
 const formManualBan = ref({ jail: '', ip: '' })
 const isBanning = ref(false)
 
+const f2bLogFilter = ref('all')
 const showConfigModal = ref(false)
 const formConfig = ref({ name: '', enabled: false, port: '', logpath: '', filter: '', maxretry: '', bantime: '', findtime: '' })
 const isDeletingJail = ref(false)
@@ -760,13 +761,18 @@ onUnmounted(() => {
                 :class="f2bActiveTab === 'logs' ? 'border-brand-500 text-brand-500' : 'border-transparent text-slate-500 hover:text-slate-700'">
                 Live Logs
               </button>
-              <button @click="openConfigModal" class="ml-auto btn-outline text-xs py-1 px-3">
+              <select v-model="f2bLogFilter" class="input-field w-auto py-1.5 text-xs ml-2">
+                <option value="all">All</option>
+                <option value="ban">Ban</option>
+                <option value="unban">Unban</option>
+              </select>
+              <button @click="openConfigModal" class="ml-auto btn-secondary text-xs py-1 px-3">
                 <ShieldCheck class="w-3.5 h-3.5" /> Configure Jails
               </button>
             </div>
-            <div class="bg-black/90 text-slate-300 font-mono text-[10px] p-3 rounded-xl overflow-y-auto h-[180px] leading-relaxed">
+            <div class="bg-[#0d1117] text-slate-300 font-mono text-[10px] p-3 rounded-xl overflow-y-auto h-[180px] leading-relaxed">
               <div v-if="f2bLogs.length === 0" class="text-slate-600 italic">No recent logs...</div>
-              <div v-for="(line, idx) in f2bLogs" :key="idx" class="py-0.5 hover:bg-white/5 px-1"
+              <div v-for="(line, idx) in f2bLogs.filter(l => f2bLogFilter === 'all' || (f2bLogFilter === 'ban' && l.includes('Ban')) || (f2bLogFilter === 'unban' && l.includes('Unban')))" :key="idx" class="py-0.5 hover:bg-white/5 px-1"
                 :class="{'text-red-400': line.includes('Ban'), 'text-emerald-400': line.includes('Unban'), 'text-blue-400': line.includes('Found')}">
                 {{ line }}
               </div>
@@ -944,7 +950,7 @@ onUnmounted(() => {
     <!-- ── JAIL CONFIG MODAL ── -->
     <Teleport to="body">
       <div v-if="showConfigModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
-        <div class="rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh]" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+        <div class="rounded-xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh]" :class="isDark ? 'bg-slate-800' : 'bg-white'" style="box-shadow: var(--shadow-modal)">
           <div class="p-4 border-b flex justify-between items-center shrink-0" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
             <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'">
               <ShieldCheck class="w-4 h-4 text-brand-500" /> Jail Configuration — /etc/fail2ban/jail.local
@@ -971,7 +977,7 @@ onUnmounted(() => {
               </div>
               <div class="p-3 flex-1">
                 <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Configured Jails</div>
-                <button @click="createNewJail" class="w-full btn-outline border-dashed text-xs py-1.5 mb-2">+ Create Custom Jail</button>
+                <button @click="createNewJail" class="w-full btn-secondary border-dashed text-xs py-1.5 mb-2">+ Create Custom Jail</button>
                 <div v-for="j in f2bConfig" :key="j.name" @click="editJail(j)"
                   class="p-2.5 border rounded-lg cursor-pointer transition-colors flex justify-between items-center mb-1"
                   :class="[formConfig.name === j.name ? (isDark ? 'bg-brand-900/30 border-brand-500' : 'bg-brand-50 border-brand-400') : (isDark ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-white'), !j.enabled ? 'opacity-50' : '']">

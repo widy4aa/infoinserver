@@ -171,21 +171,44 @@ const handleUpdateGroups = async () => {
   }
 }
 
+// ── CONFIRM MODAL (replaces native confirm()) ──
+const confirmModal = ref({ visible: false, title: '', message: '', confirmLabel: 'Confirm', onConfirm: null })
+
+const openConfirmModal = ({ title, message, confirmLabel, onConfirm }) => {
+  confirmModal.value = { visible: true, title, message, confirmLabel: confirmLabel || 'Confirm', onConfirm }
+}
+
+const doConfirmModal = () => {
+  const cb = confirmModal.value.onConfirm
+  confirmModal.value.visible = false
+  if (cb) cb()
+}
+
+const cancelConfirmModal = () => {
+  confirmModal.value.visible = false
+}
+
 // ── DELETE USER ──
+const deleteUserRemoveHome = ref(false)
+
 const handleDeleteUser = (username) => {
-  const willDeleteHome = confirm(`Hapus home directory untuk user ${username} juga? (Cancel = Keep home dir, OK = Delete home dir)`)
-  const url = `${getActiveServerUrl()}/api/users/${username}?remove_home=${willDeleteHome}`
-  
-  showConfirm("Hapus User", `Yakin ingin menghapus user Linux: ${username}?`, async () => {
-    try {
-      const res = await apiFetch(url, { method: 'DELETE' })
-      const data = await res.json()
-      if (res.ok) {
-        showToast("Success", data.message, "success")
-        fetchUsersAndGroups()
-      } else throw new Error(data.error || data)
-    } catch(e) {
-      showToast("Error", e.message, "error")
+  deleteUserRemoveHome.value = false
+  openConfirmModal({
+    title: 'Delete User',
+    message: `Delete Linux user: ${username}?`,
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      const url = `${getActiveServerUrl()}/api/users/${username}?remove_home=${deleteUserRemoveHome.value}`
+      try {
+        const res = await apiFetch(url, { method: 'DELETE' })
+        const data = await res.json()
+        if (res.ok) {
+          showToast("Success", data.message, "success")
+          fetchUsersAndGroups()
+        } else throw new Error(data.error || data)
+      } catch(e) {
+        showToast("Error", e.message, "error")
+      }
     }
   })
 }
@@ -336,9 +359,9 @@ onMounted(() => {
               <td class="table-td text-right">
                 <div class="flex items-center justify-end gap-1.5">
                   <button @click="openSshModal(user.username)" class="p-1.5 rounded bg-emerald-100 text-emerald-600 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:hover:bg-emerald-900/50" title="Manage SSH Keys"><Key class="w-3.5 h-3.5" /></button>
-                  <button @click="openPassModal(user.username)" class="btn-icon-amber" title="Change Password"><Lock class="w-3.5 h-3.5" /></button>
-                  <button @click="openGroupModal(user)" class="btn-icon-blue" title="Manage Groups"><Shield class="w-3.5 h-3.5" /></button>
-                  <button @click="handleDeleteUser(user.username)" class="btn-icon-red" title="Delete User" :disabled="user.uid === 0"><Trash2 class="w-3.5 h-3.5" /></button>
+                  <button @click="openPassModal(user.username)" class="btn-icon-warning" title="Change Password"><Lock class="w-3.5 h-3.5" /></button>
+                  <button @click="openGroupModal(user)" class="btn-icon-primary" title="Manage Groups"><Shield class="w-3.5 h-3.5" /></button>
+                  <button @click="handleDeleteUser(user.username)" class="btn-icon-danger" title="Delete User" :disabled="user.uid === 0"><Trash2 class="w-3.5 h-3.5" /></button>
                 </div>
               </td>
             </tr>
@@ -392,7 +415,7 @@ onMounted(() => {
                 </div>
               </td>
               <td class="table-td text-right">
-                <button @click="handleDeleteGroup(group.name)" class="btn-icon-red" title="Delete Group" :disabled="group.gid === 0 || group.name === 'wheel' || group.name === 'sudo'">
+                <button @click="handleDeleteGroup(group.name)" class="btn-icon-danger" title="Delete Group" :disabled="group.gid === 0 || group.name === 'wheel' || group.name === 'sudo'">
                   <Trash2 class="w-3.5 h-3.5" />
                 </button>
               </td>
@@ -405,10 +428,10 @@ onMounted(() => {
     <!-- Modal: Add User -->
     <Teleport to="body">
       <div v-if="showAddModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
-        <div class="rounded-xl shadow-xl w-full max-w-md overflow-hidden" :class="isDark ? 'bg-slate-800' : 'bg-white'">
-          <div class="p-4 border-b flex justify-between items-center" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
-            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><UserPlus class="w-4 h-4 text-brand-500"/> Add New User</h3>
-            <button @click="showAddModal = false" class="transition-colors" :class="isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'"><X class="w-4 h-4"/></button>
+        <div class="rounded-xl w-full max-w-md overflow-hidden" style="box-shadow: var(--shadow-modal)" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <div class="p-4 border-b flex justify-between items-center bg-slate-900 border-slate-700">
+            <h3 class="font-bold flex items-center gap-2 text-slate-100"><UserPlus class="w-4 h-4 text-brand-500"/> Add New User</h3>
+            <button @click="showAddModal = false" class="text-slate-400 hover:text-slate-200"><X class="w-4 h-4"/></button>
           </div>
           <div class="p-5 space-y-4">
             <div>
@@ -425,7 +448,7 @@ onMounted(() => {
             </label>
           </div>
           <div class="p-4 border-t flex justify-end gap-2" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
-            <button @click="showAddModal = false" class="btn-outline">Cancel</button>
+            <button @click="showAddModal = false" class="btn-secondary">Cancel</button>
             <button @click="handleCreateUser" class="btn-primary" :disabled="isSubmittingUser">
               <Loader2 v-if="isSubmittingUser" class="w-4 h-4 animate-spin" /> Create
             </button>
@@ -437,17 +460,17 @@ onMounted(() => {
     <!-- Modal: Change Password -->
     <Teleport to="body">
       <div v-if="showPassModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
-        <div class="rounded-xl shadow-xl w-full max-w-sm overflow-hidden" :class="isDark ? 'bg-slate-800' : 'bg-white'">
-          <div class="p-4 border-b flex justify-between items-center" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
-            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><Lock class="w-4 h-4 text-amber-500"/> Change Password</h3>
-            <button @click="showPassModal = false" class="transition-colors" :class="isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'"><X class="w-4 h-4"/></button>
+        <div class="rounded-xl w-full max-w-sm overflow-hidden" style="box-shadow: var(--shadow-modal)" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <div class="p-4 border-b flex justify-between items-center bg-slate-900 border-slate-700">
+            <h3 class="font-bold flex items-center gap-2 text-slate-100"><Lock class="w-4 h-4 text-amber-500"/> Change Password</h3>
+            <button @click="showPassModal = false" class="text-slate-400 hover:text-slate-200"><X class="w-4 h-4"/></button>
           </div>
           <div class="p-5">
             <p class="text-sm mb-4" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Enter new password for <strong :class="isDark ? 'text-slate-100' : 'text-slate-800'">{{ formPass.username }}</strong>:</p>
             <input v-model="formPass.password" type="password" class="input-field w-full" placeholder="New password" @keyup.enter="handleChangePassword" />
           </div>
           <div class="p-4 border-t flex justify-end gap-2" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
-            <button @click="showPassModal = false" class="btn-outline">Cancel</button>
+            <button @click="showPassModal = false" class="btn-secondary">Cancel</button>
             <button @click="handleChangePassword" class="btn-primary bg-amber-500 hover:bg-amber-600 border-none text-white">Save</button>
           </div>
         </div>
@@ -457,22 +480,22 @@ onMounted(() => {
     <!-- Modal: Manage Groups -->
     <Teleport to="body">
       <div v-if="showGroupModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
-        <div class="rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]" :class="isDark ? 'bg-slate-800' : 'bg-white'">
-          <div class="p-4 border-b flex justify-between items-center shrink-0" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
-            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><Shield class="w-4 h-4 text-blue-500"/> Manage Groups</h3>
-            <button @click="showGroupModal = false" class="transition-colors" :class="isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'"><X class="w-4 h-4"/></button>
+        <div class="rounded-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]" style="box-shadow: var(--shadow-modal)" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <div class="p-4 border-b flex justify-between items-center shrink-0 bg-slate-900 border-slate-700">
+            <h3 class="font-bold flex items-center gap-2 text-slate-100"><Shield class="w-4 h-4 text-cyan-500"/> Manage Groups</h3>
+            <button @click="showGroupModal = false" class="text-slate-400 hover:text-slate-200"><X class="w-4 h-4"/></button>
           </div>
           <div class="p-5 overflow-y-auto">
             <p class="text-sm mb-4" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Select secondary groups for <strong :class="isDark ? 'text-slate-100' : 'text-slate-800'">{{ formGroup.username }}</strong>.</p>
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <label v-for="g in groups" :key="g.name" class="flex items-center gap-2 p-2 border rounded cursor-pointer transition-colors" :class="[isDark ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-50', formGroup.selected.includes(g.name) ? (isDark ? 'bg-blue-900/20 border-blue-800' : 'bg-blue-50 border-blue-200') : '']">
+              <label v-for="g in groups" :key="g.name" class="flex items-center gap-2 p-2 border rounded cursor-pointer transition-colors" :class="[isDark ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-50', formGroup.selected.includes(g.name) ? (isDark ? 'bg-cyan-900/20 border-cyan-800' : 'bg-cyan-50 border-cyan-200') : '']">
                 <input type="checkbox" :checked="formGroup.selected.includes(g.name)" @change="toggleGroupSelection(g.name)" class="rounded focus:ring-brand-500" :class="isDark ? 'bg-slate-800 border-slate-600' : 'text-brand-600'">
                 <span class="text-xs font-mono truncate" :class="isDark ? 'text-slate-300' : 'text-slate-700'" :title="g.name">{{ g.name }}</span>
               </label>
             </div>
           </div>
           <div class="p-4 border-t flex justify-end gap-2 shrink-0" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
-            <button @click="showGroupModal = false" class="btn-outline">Cancel</button>
+            <button @click="showGroupModal = false" class="btn-secondary">Cancel</button>
             <button @click="handleUpdateGroups" class="btn-primary">Save Groups</button>
           </div>
         </div>
@@ -482,12 +505,12 @@ onMounted(() => {
     <!-- Modal: SSH Keys -->
     <Teleport to="body">
       <div v-if="showSshModal" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
-        <div class="rounded-xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col h-[80vh]" :class="isDark ? 'bg-slate-800' : 'bg-white'">
-          <div class="p-4 border-b flex justify-between items-center shrink-0" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-100'">
-            <h3 class="font-bold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'">
+        <div class="rounded-xl w-full max-w-2xl overflow-hidden flex flex-col h-[80vh]" style="box-shadow: var(--shadow-modal)" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <div class="p-4 border-b flex justify-between items-center shrink-0 bg-slate-900 border-slate-700">
+            <h3 class="font-bold flex items-center gap-2 text-slate-100">
               <Key class="w-4 h-4 text-emerald-500"/> SSH Keys for {{ sshTargetUser }}
             </h3>
-            <button @click="showSshModal = false" class="transition-colors" :class="isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'"><X class="w-4 h-4"/></button>
+            <button @click="showSshModal = false" class="text-slate-400 hover:text-slate-200"><X class="w-4 h-4"/></button>
           </div>
           
           <div class="p-4 flex-1 overflow-y-auto space-y-4">
@@ -516,6 +539,35 @@ onMounted(() => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Confirm Modal (replaces native confirm()) -->
+    <Teleport to="body">
+      <div v-if="confirmModal.visible" class="fixed inset-0 z-[200] backdrop-blur-sm flex items-center justify-center p-4"
+           :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
+        <div class="rounded-xl w-full max-w-sm overflow-hidden" style="box-shadow: var(--shadow-modal)"
+             :class="isDark ? 'bg-slate-800' : 'bg-white'">
+          <!-- Header -->
+          <div class="p-4 border-b flex items-center justify-between bg-slate-900 border-slate-700">
+            <h3 class="font-bold text-sm text-slate-100">{{ confirmModal.title }}</h3>
+            <button @click="cancelConfirmModal" class="text-slate-400 hover:text-slate-200"><X class="w-4 h-4"/></button>
+          </div>
+          <!-- Body -->
+          <div class="p-5 space-y-3">
+            <p class="text-sm" :class="isDark ? 'text-slate-300' : 'text-slate-700'">{{ confirmModal.message }}</p>
+            <!-- Extra option for delete user -->
+            <label v-if="confirmModal.title === 'Delete User'" class="flex items-center gap-2 cursor-pointer mt-1">
+              <input v-model="deleteUserRemoveHome" type="checkbox" class="rounded text-red-600" :class="isDark ? 'bg-slate-900 border-slate-700' : ''" />
+              <span class="text-xs" :class="isDark ? 'text-slate-400' : 'text-slate-600'">Also delete home directory</span>
+            </label>
+          </div>
+          <!-- Footer -->
+          <div class="p-4 border-t flex justify-end gap-2" :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'">
+            <button @click="cancelConfirmModal" class="btn-secondary">Cancel</button>
+            <button @click="doConfirmModal" class="btn-primary bg-red-600 hover:bg-red-700 border-none text-white">{{ confirmModal.confirmLabel }}</button>
           </div>
         </div>
       </div>

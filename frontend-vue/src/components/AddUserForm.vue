@@ -105,7 +105,7 @@ const handleAdd = async () => {
 
     <!-- Buttons -->
     <div class="flex gap-3 pt-1">
-      <button @click="$emit('cancel')" class="btn-outline flex-1 justify-center" :disabled="isLoading">
+      <button @click="$emit('cancel')" class="btn-secondary flex-1 justify-center" :disabled="isLoading">
         Cancel
       </button>
       <button @click="handleAdd" class="btn-primary flex-1 justify-center" :disabled="isLoading">

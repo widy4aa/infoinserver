@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { Lock, User, Loader2, AlertCircle, ArrowLeft } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useServerStore } from '../stores/serverStore'
@@ -57,56 +57,77 @@ const handleLogin = async () => {
 const onKeydown = (e) => {
   if (e.key === 'Enter') handleLogin()
 }
-
-const overlayClass = computed(() => isDark.value ? 'bg-slate-950/80' : 'bg-slate-900/70')
-const modalBgClass = computed(() => isDark.value ? 'bg-slate-800' : 'bg-white')
-const headerClass = computed(() => isDark.value ? 'bg-slate-900 border-slate-800' : 'bg-slate-900')
-const formBgClass = computed(() => isDark.value ? 'bg-slate-800' : 'bg-white')
-const labelClass = computed(() => isDark.value ? 'text-slate-400' : 'text-slate-600')
-const inputIconClass = computed(() => isDark.value ? 'text-slate-500' : 'text-slate-400')
-const errorBgClass = computed(() => isDark.value ? 'bg-red-900/30 border-red-800 text-red-300' : 'bg-red-50 border-red-200 text-red-700')
-const helpTextClass = computed(() => isDark.value ? 'text-slate-500' : 'text-slate-400')
 </script>
 
 <template>
-  <div class="fixed inset-0 backdrop-blur-sm z-[80] flex items-center justify-center p-4" :class="overlayClass">
-    <div class="rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" :class="modalBgClass">
+  <div class="fixed inset-0 backdrop-blur-sm z-[80] flex items-center justify-center p-4"
+       :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
+
+    <div class="w-full max-w-sm overflow-hidden rounded-2xl animate-fade-slide-up"
+         :class="isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-200'"
+         style="box-shadow: var(--shadow-modal)">
 
       <!-- Header -->
-      <div class="px-6 py-5 flex items-center gap-3 border-b" :class="headerClass">
-        <button @click="router.push('/')" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-all shrink-0" title="Back to Home">
+      <div class="px-5 py-4 flex items-center gap-3 border-b"
+           :class="isDark ? 'border-slate-800' : 'border-slate-100'">
+
+        <!-- Back button -->
+        <button @click="router.push('/')"
+          class="w-8 h-8 flex items-center justify-center rounded-lg transition-all duration-150 shrink-0"
+          :class="isDark
+            ? 'text-slate-500 hover:text-slate-200 hover:bg-slate-800'
+            : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'"
+          title="Back to Home">
           <ArrowLeft class="w-4 h-4" />
         </button>
-        <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center shrink-0">
-          <Lock class="w-4 h-4 text-white" />
+
+        <!-- Brand icon -->
+        <div class="w-8 h-8 rounded-lg bg-cyan-500 flex items-center justify-center shrink-0">
+          <svg viewBox="0 0 16 16" fill="none" class="w-4 h-4 text-white" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <polyline points="2,5 6,8 2,11" />
+            <line x1="8" y1="11" x2="14" y2="11" />
+          </svg>
         </div>
-        <div class="min-w-0">
-          <h2 class="text-white font-semibold text-sm leading-tight">Login to Server</h2>
-          <div class="text-slate-400 text-xs font-mono truncate mt-0.5">{{ server.name }} · {{ server.url }}</div>
+
+        <!-- Server name -->
+        <div class="flex-1 min-w-0">
+          <div class="text-sm font-semibold truncate"
+               :class="isDark ? 'text-slate-100' : 'text-slate-800'">
+            {{ server.name }}
+          </div>
+          <div class="text-[11px] font-mono truncate mt-0.5"
+               :class="isDark ? 'text-slate-500' : 'text-slate-400'">
+            {{ server.url }}
+          </div>
         </div>
       </div>
 
       <!-- Form -->
-      <div class="p-6 space-y-4" :class="formBgClass">
-        <p class="text-sm" :class="labelClass">
-          Enter your Linux OS credentials for this server.
-        </p>
+      <div class="p-6 space-y-4">
 
         <!-- Error -->
-        <div v-if="error" class="flex items-start gap-2 rounded-lg p-3" :class="errorBgClass">
-          <AlertCircle class="w-4 h-4 shrink-0 mt-0.5" />
+        <div v-if="error"
+          class="flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs border"
+          :class="isDark
+            ? 'bg-red-900/20 border-red-800/50 text-red-400'
+            : 'bg-red-50 border-red-200 text-red-600'">
+          <AlertCircle class="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{{ error }}</span>
         </div>
 
         <!-- Username -->
-        <div class="space-y-1">
-          <label class="text-xs font-semibold uppercase tracking-wider" :class="labelClass">Username</label>
+        <div class="space-y-1.5">
+          <label class="text-[10px] font-semibold uppercase tracking-[0.08em]"
+                 :class="isDark ? 'text-slate-500' : 'text-slate-400'">
+            Username
+          </label>
           <div class="relative">
-            <User class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" :class="inputIconClass" />
+            <User class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+                  :class="isDark ? 'text-slate-600' : 'text-slate-400'" />
             <input
               v-model="username"
               type="text"
-              placeholder="e.g. root, ubuntu, widy"
+              placeholder="root, ubuntu, widy..."
               class="input-field !pl-9"
               autocomplete="username"
               @keydown="onKeydown"
@@ -116,10 +137,14 @@ const helpTextClass = computed(() => isDark.value ? 'text-slate-500' : 'text-sla
         </div>
 
         <!-- Password -->
-        <div class="space-y-1">
-          <label class="text-xs font-semibold uppercase tracking-wider" :class="labelClass">Password</label>
+        <div class="space-y-1.5">
+          <label class="text-[10px] font-semibold uppercase tracking-[0.08em]"
+                 :class="isDark ? 'text-slate-500' : 'text-slate-400'">
+            Password
+          </label>
           <div class="relative">
-            <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" :class="inputIconClass" />
+            <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+                  :class="isDark ? 'text-slate-600' : 'text-slate-400'" />
             <input
               v-model="password"
               type="password"
@@ -135,17 +160,14 @@ const helpTextClass = computed(() => isDark.value ? 'text-slate-500' : 'text-sla
         <!-- Submit -->
         <button
           @click="handleLogin"
-          class="btn-primary w-full justify-center"
           :disabled="isLoading"
+          class="btn-primary w-full justify-center"
         >
           <Loader2 v-if="isLoading" class="w-4 h-4 animate-spin" />
           <Lock v-else class="w-4 h-4" />
           {{ isLoading ? 'Authenticating...' : 'Login' }}
         </button>
 
-        <p class="text-center text-xs" :class="helpTextClass">
-          Credentials are verified by the server via PAM
-        </p>
       </div>
     </div>
   </div>

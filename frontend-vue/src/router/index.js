@@ -25,7 +25,7 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginView,
-      meta: { public: true, fullscreen: true },
+      meta: { public: true, hideNav: true },
     },
     {
       path: '/auth/callback',

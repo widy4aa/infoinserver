@@ -5,7 +5,7 @@ import { onMounted, onUnmounted, ref, computed } from 'vue'
 import NativeTerminal from '../components/NativeTerminal.vue'
 import LoginModal from '../components/LoginModal.vue'
 import AddUserForm from '../components/AddUserForm.vue'
-import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle, Users, PowerSquare, ScrollText, Clock, Download, Server, ChevronDown, Plus, LogOut, Check } from 'lucide-vue-next'
+import { ArrowLeft, Terminal, LayoutDashboard, ShieldCheck, Box, FolderTree, Settings, Cloud, User, Activity, AlertCircle, Users, PowerSquare, ScrollText, Clock, Download, Server, ChevronDown, Plus, LogOut, Check, Loader2 } from 'lucide-vue-next'
 import { getDistroIcon } from '../utils/distro.js'
 import { useThemeStore } from '../stores/themeStore'
 
@@ -17,7 +17,6 @@ const currentServer = ref(null)
 const showTerminal = ref(false)
 const showLogin = ref(false)
 
-// ── User Switcher State ──────────────────────────────────────
 const showUserDropdown = ref(false)
 const showAddUserModal = ref(false)
 
@@ -35,7 +34,6 @@ const handleSwitchUser = (username) => {
   if (!currentServer.value?.id) return
   switchUser(currentServer.value.id, username)
   showUserDropdown.value = false
-  // File explorer dan komponen lain akan re-render otomatis karena token berubah
 }
 
 const handleRemoveUser = (username) => {
@@ -44,7 +42,6 @@ const handleRemoveUser = (username) => {
   const wasActive = activeUser.value === username
   removeUser(serverId, username)
   showUserDropdown.value = false
-  // Jika user yang dihapus adalah yang aktif dan tidak ada user tersisa, logout
   if (wasActive && currentUsers.value.length === 0) {
     showLogin.value = true
   }
@@ -53,19 +50,16 @@ const handleRemoveUser = (username) => {
 const handleAddUserSuccess = (newUsername, newToken) => {
   if (!currentServer.value?.id) return
   addUserToken(currentServer.value.id, newUsername, newToken)
-  // Set user baru sebagai aktif
   switchUser(currentServer.value.id, newUsername)
   showAddUserModal.value = false
 }
 
-// Tutup dropdown saat klik di luar
 const handleClickOutside = (e) => {
   if (!e.target.closest('.user-switcher-container')) {
     showUserDropdown.value = false
   }
 }
 
-// Logout manual — hanya dipanggil saat klik tombol Back ke Home
 const handleGoHome = () => {
   if (currentServer.value?.id) {
     clearToken(currentServer.value.id)
@@ -80,36 +74,40 @@ const checkPing = async () => {
   if (!currentServer.value?.url) return
   const url = currentServer.value.url.startsWith('http') ? currentServer.value.url : `http://${currentServer.value.url}`
   const startTime = performance.now()
-  
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 3000)
-    
-    // Panggil endpoint /api/ping public yang sangat ringan
     await fetch(`${url}/api/ping`, { signal: controller.signal })
     clearTimeout(timeoutId)
-    
-    const endTime = performance.now()
-    pingMs.value = Math.round(endTime - startTime)
+    pingMs.value = Math.round(performance.now() - startTime)
   } catch (e) {
-    // Jika timeout atau gagal
     pingMs.value = -1
   }
 }
 
+const pingClass = computed(() => {
+  if (pingMs.value === null) return 'text-slate-400'
+  if (pingMs.value === -1)   return 'text-red-400'
+  if (pingMs.value < 100)    return 'text-emerald-400'
+  if (pingMs.value < 300)    return 'text-amber-400'
+  return 'text-orange-400'
+})
+
+const pingDotClass = computed(() => {
+  if (pingMs.value === null) return 'bg-slate-400'
+  if (pingMs.value === -1)   return 'bg-red-500'
+  if (pingMs.value < 100)    return 'bg-emerald-500'
+  if (pingMs.value < 300)    return 'bg-amber-500'
+  return 'bg-orange-500'
+})
+
 const checkAuth = () => {
   const sid = currentServer.value?.id
   if (!sid) return
-  if (!isAuthenticated(sid)) {
-    showLogin.value = true
-  } else {
-    showLogin.value = false
-  }
+  showLogin.value = !isAuthenticated(sid)
 }
 
-const onLoginSuccess = () => {
-  showLogin.value = false
-}
+const onLoginSuccess = () => { showLogin.value = false }
 
 const handleAuthExpired = (e) => {
   if (e.detail?.serverId === currentServer.value?.id) {
@@ -121,203 +119,184 @@ const handleAuthExpired = (e) => {
 onMounted(() => {
   const sid = route.params.id
   setActiveServer(sid)
-  const server = servers.value.find(s => s.id === sid)
-  currentServer.value = server
+  currentServer.value = servers.value.find(s => s.id === sid)
   checkAuth()
   window.addEventListener('auth:expired', handleAuthExpired)
   window.addEventListener('click', handleClickOutside)
-  
-  checkPing() // Immediate check
+  checkPing()
   pingInterval = setInterval(checkPing, 3000)
-
-  // Jika token tidak ada saat pertama mount (misal setelah tab ditutup/dibuka ulang),
-  // langsung tampilkan LoginModal tanpa perlu tunggu API call gagal dulu
-  if (!isAuthenticated(sid)) {
-    showLogin.value = true
-  }
+  if (!isAuthenticated(sid)) showLogin.value = true
 })
 
 onUnmounted(() => {
   window.removeEventListener('auth:expired', handleAuthExpired)
   window.removeEventListener('click', handleClickOutside)
   if (pingInterval) clearInterval(pingInterval)
-  // Tidak hapus token di sini — supaya refresh tidak logout
 })
+
+const navItems = computed(() => [
+  { to: `/server/${currentServer.value?.id}/dashboard`,  icon: LayoutDashboard, label: 'System' },
+  { to: `/server/${currentServer.value?.id}/updates`,    icon: Download,        label: 'Updates' },
+  { to: `/server/${currentServer.value?.id}/services`,   icon: PowerSquare,     label: 'Services' },
+  { to: `/server/${currentServer.value?.id}/files`,      icon: FolderTree,      label: 'Files' },
+  { to: `/server/${currentServer.value?.id}/containers`, icon: Box,             label: 'Containers' },
+  { to: `/server/${currentServer.value?.id}/users`,      icon: Users,           label: 'Users' },
+  { to: `/server/${currentServer.value?.id}/ports`,      icon: ShieldCheck,     label: 'Network' },
+  { to: `/server/${currentServer.value?.id}/cloudflare`, icon: Cloud,           label: 'Cloudflare' },
+  { to: `/server/${currentServer.value?.id}/cron`,       icon: Clock,           label: 'Cron' },
+  { to: `/server/${currentServer.value?.id}/syslogs`,    icon: ScrollText,      label: 'Syslogs' },
+  { to: `/server/${currentServer.value?.id}/logs`,       icon: AlertCircle,     label: 'Alerts' },
+  { to: `/server/${currentServer.value?.id}/settings`,   icon: Settings,        label: 'Config' },
+])
 </script>
 
 <template>
-  <div v-if="currentServer" class="space-y-6">
-    <!-- Server Context Header with Navigation -->
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden dark:bg-slate-800 dark:border-slate-700">
-      <!-- Top info bar -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
-        <div class="flex items-center gap-4">
-          <RouterLink to="/" @click="handleGoHome" class="p-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors shadow-sm dark:bg-slate-700 dark:border-slate-600 dark:hover:bg-slate-600 dark:text-slate-300">
-            <ArrowLeft class="w-5 h-5" />
-          </RouterLink>
-          <!-- Distro Icon di sebelah tombol back -->
-          <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700">
-            <img v-if="getDistroIcon(currentServer.os_name)" :src="getDistroIcon(currentServer.os_name)" :alt="currentServer.os_name" class="w-6 h-6 object-contain" />
-            <Server v-else class="w-5 h-5 text-slate-400" />
-          </div>
-          <div>
-            <div class="flex items-center gap-2">
-              <h2 class="font-bold text-lg text-slate-800 dark:text-slate-100 leading-tight">{{ currentServer.name }}</h2>
-              <!-- User Switcher Dropdown (menggantikan badge username sederhana) -->
-              <div class="relative user-switcher-container" v-if="activeUser">
-                <button @click.stop="showUserDropdown = !showUserDropdown"
-                  class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold transition-colors cursor-pointer select-none"
-                  :class="isDark ? 'bg-blue-900/30 text-blue-300 hover:bg-blue-900/50' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'">
-                  <User class="w-3 h-3" />
-                  {{ activeUser }}
-                  <ChevronDown class="w-3 h-3 transition-transform" :class="showUserDropdown ? 'rotate-180' : ''" />
-                </button>
+  <div v-if="currentServer" class="flex gap-4 min-h-[calc(100vh-5rem)]">
 
-                <!-- Dropdown -->
-                <div v-if="showUserDropdown"
-                  class="absolute left-0 top-full mt-1.5 rounded-xl shadow-xl border z-[200] overflow-hidden min-w-[200px]"
-                  :class="isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'">
-                  <!-- Header -->
-                  <div class="px-3 py-2 border-b text-[10px] font-bold uppercase tracking-wider text-slate-500"
-                    :class="isDark ? 'border-slate-700' : 'border-slate-100'">
-                    Switch User
-                  </div>
-                  <!-- User List -->
-                  <div class="py-1">
-                    <button v-for="username in currentUsers" :key="username"
-                      @click="handleSwitchUser(username)"
-                      class="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm transition-colors text-left"
-                      :class="isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'">
-                      <div class="flex items-center gap-2 min-w-0">
-                        <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold"
-                          :class="username === activeUser
-                            ? 'bg-blue-500 text-white'
-                            : (isDark ? 'bg-slate-600 text-slate-300' : 'bg-slate-200 text-slate-600')">
-                          {{ username.charAt(0).toUpperCase() }}
-                        </div>
-                        <span class="truncate font-medium" :class="isDark ? 'text-slate-200' : 'text-slate-700'">
-                          {{ username }}
-                        </span>
-                      </div>
-                      <div class="flex items-center gap-1.5 shrink-0">
-                        <Check v-if="username === activeUser" class="w-3.5 h-3.5 text-blue-500" />
-                        <button v-else @click.stop="handleRemoveUser(username)"
-                          class="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-500"
-                          title="Remove user">
-                          <LogOut class="w-3 h-3" />
-                        </button>
-                      </div>
-                    </button>
-                  </div>
-                  <!-- Divider + Add User -->
-                  <div class="border-t" :class="isDark ? 'border-slate-700' : 'border-slate-100'">
-                    <button @click="showAddUserModal = true; showUserDropdown = false"
-                      class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition-colors"
-                      :class="isDark ? 'text-brand-400 hover:bg-slate-700' : 'text-brand-600 hover:bg-slate-50'">
-                      <Plus class="w-3.5 h-3.5" />
-                      Add Another User
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="text-xs text-slate-500 dark:text-slate-400 font-mono">{{ currentServer.url }}</div>
+    <!-- ── Sidebar kiri ── -->
+    <aside class="w-64 shrink-0 flex flex-col gap-3 sticky top-24 h-fit">
+
+      <!-- Server identity card — liquid glass -->
+      <div class="rounded-2xl overflow-hidden border"
+           :class="isDark ? 'border-white/8' : 'border-white/30'"
+           :style="isDark
+             ? 'background: rgba(15,23,42,0.55); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: 0 4px 24px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.06);'
+             : 'background: rgba(255,255,255,0.55); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); box-shadow: 0 4px 24px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8);'">
+
+        <!-- Distro banner — full width, square-ish -->
+        <div class="relative w-full h-28 flex items-center justify-center border-b"
+             :class="isDark ? 'border-white/6 bg-slate-900/40' : 'border-black/5 bg-slate-100/60'">
+          <!-- Back button — pojok kiri atas -->
+          <RouterLink to="/" @click="handleGoHome"
+            class="absolute top-2.5 left-2.5 w-7 h-7 flex items-center justify-center rounded-lg transition-all z-10"
+            :class="isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-white/10' : 'text-slate-500 hover:text-slate-700 hover:bg-black/8'"
+            title="Back to Home">
+            <ArrowLeft class="w-3.5 h-3.5" />
+          </RouterLink>
+
+          <!-- Distro icon besar -->
+          <img v-if="getDistroIcon(currentServer.os_name)"
+            :src="getDistroIcon(currentServer.os_name)"
+            :alt="currentServer.os_name"
+            class="w-16 h-16 object-contain drop-shadow-sm" />
+          <Server v-else class="w-16 h-16 text-slate-300 dark:text-slate-600" />
+
+          <!-- Ping badge — pojok kanan atas -->
+          <div class="absolute top-2.5 right-2.5 flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-mono border"
+               :class="isDark ? 'bg-slate-900/60 border-white/8' : 'bg-white/60 border-black/8'">
+            <div class="w-1.5 h-1.5 rounded-full" :class="pingDotClass"></div>
+            <span :class="pingClass">{{ pingMs === null ? '...' : pingMs === -1 ? 'timeout' : pingMs + 'ms' }}</span>
           </div>
         </div>
 
-        <div class="flex items-center gap-3">
-          <!-- Ping Indicator -->
-          <div class="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-mono font-medium border"
-               :class="pingMs === null ? 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' :
-                       pingMs === -1 ? 'bg-red-100 text-red-600 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800/50' :
-                       pingMs < 100 ? 'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/30' :
-                       pingMs < 300 ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/30' :
-                       'bg-orange-50 text-orange-600 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800/30'">
-            <div class="w-2 h-2 rounded-full" 
-                 :class="pingMs === null ? 'bg-slate-400' : 
-                         pingMs === -1 ? 'bg-red-500' : 
-                         pingMs < 100 ? 'bg-emerald-500' : 
-                         pingMs < 300 ? 'bg-amber-500' : 
-                         'bg-orange-500'"></div>
-            <span>{{ pingMs === null ? 'ping...' : pingMs === -1 ? 'timeout' : pingMs + 'ms' }}</span>
+        <!-- Info + controls -->
+        <div class="p-4 space-y-3">
+          <!-- Server name + url -->
+          <div>
+            <div class="font-bold text-sm leading-tight truncate"
+                 :class="isDark ? 'text-slate-100' : 'text-slate-800'">
+              {{ currentServer.name }}
+            </div>
+            <div class="text-[10px] font-mono truncate mt-0.5"
+                 :class="isDark ? 'text-slate-500' : 'text-slate-400'">
+              {{ currentServer.url }}
+            </div>
           </div>
 
-          <!-- Terminal Button -->
+          <!-- User switcher -->
+          <div class="relative user-switcher-container" v-if="activeUser">
+            <button @click.stop="showUserDropdown = !showUserDropdown"
+              class="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+              :class="isDark ? 'bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50' : 'bg-cyan-100/80 text-cyan-700 hover:bg-cyan-100'">
+              <User class="w-3 h-3 shrink-0" />
+              <span class="truncate flex-1 text-left">{{ activeUser }}</span>
+              <ChevronDown class="w-3 h-3 shrink-0 transition-transform" :class="showUserDropdown ? 'rotate-180' : ''" />
+            </button>
+
+            <div v-if="showUserDropdown"
+              class="absolute left-0 top-full mt-1.5 w-full rounded-xl border z-[200] overflow-hidden"
+              :class="isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'"
+              style="box-shadow: var(--shadow-dropdown)">
+              <div class="px-3 py-2 border-b text-[10px] font-bold uppercase tracking-wider text-slate-500"
+                :class="isDark ? 'border-slate-700' : 'border-slate-100'">Switch User</div>
+              <div class="py-1">
+                <button v-for="username in currentUsers" :key="username"
+                  @click="handleSwitchUser(username)"
+                  class="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs transition-colors text-left"
+                  :class="isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <div class="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[9px] font-bold"
+                      :class="username === activeUser ? 'bg-cyan-500 text-white' : (isDark ? 'bg-slate-600 text-slate-300' : 'bg-slate-200 text-slate-600')">
+                      {{ username.charAt(0).toUpperCase() }}
+                    </div>
+                    <span class="truncate font-medium" :class="isDark ? 'text-slate-200' : 'text-slate-700'">{{ username }}</span>
+                  </div>
+                  <Check v-if="username === activeUser" class="w-3 h-3 text-cyan-500 shrink-0" />
+                  <button v-else @click.stop="handleRemoveUser(username)"
+                    class="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-500"
+                    title="Remove user">
+                    <LogOut class="w-3 h-3" />
+                  </button>
+                </button>
+              </div>
+              <div class="border-t" :class="isDark ? 'border-slate-700' : 'border-slate-100'">
+                <button @click="showAddUserModal = true; showUserDropdown = false"
+                  class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition-colors"
+                  :class="isDark ? 'text-brand-400 hover:bg-slate-700' : 'text-brand-600 hover:bg-slate-50'">
+                  <Plus class="w-3 h-3" /> Add Another User
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Terminal button -->
           <button @click="showTerminal = true"
-            class="w-9 h-9 rounded-lg bg-brand-600 hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-400 text-white flex items-center justify-center transition-colors shadow-sm shrink-0"
-            title="Root Terminal">
-            <Terminal class="w-4 h-4" />
+            class="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors
+                   bg-brand-500 hover:bg-brand-600 text-white"
+            title="Open Terminal">
+            <Terminal class="w-3.5 h-3.5" /> Terminal
           </button>
         </div>
       </div>
 
-      <!-- Feature Tabs -->
-      <div class="px-3 pb-1 pt-2 bg-white border-t border-slate-100 dark:bg-slate-800 dark:border-slate-700">
-        <nav class="flex flex-wrap gap-x-2 sm:gap-x-4 gap-y-1" aria-label="Tabs">
-          <RouterLink :to="`/server/${currentServer.id}/dashboard`" class="tab-item" active-class="tab-active">
-            <LayoutDashboard class="w-4 h-4" /> System
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/updates`" class="tab-item" active-class="tab-active">
-            <Download class="w-4 h-4" /> Updates
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/services`" class="tab-item" active-class="tab-active">
-            <PowerSquare class="w-4 h-4" /> Services
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/files`" class="tab-item" active-class="tab-active">
-            <FolderTree class="w-4 h-4" /> File Explorer
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/containers`" class="tab-item" active-class="tab-active">
-            <Box class="w-4 h-4" /> Containers
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/users`" class="tab-item" active-class="tab-active">
-            <Users class="w-4 h-4" /> Users & Groups
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/ports`" class="tab-item" active-class="tab-active">
-            <ShieldCheck class="w-4 h-4" /> Network & Security
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/cloudflare`" class="tab-item" active-class="tab-active">
-            <Cloud class="w-4 h-4" /> Cloudflare
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/cron`" class="tab-item" active-class="tab-active">
-            <Clock class="w-4 h-4" /> Cronjobs
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/syslogs`" class="tab-item" active-class="tab-active">
-            <ScrollText class="w-4 h-4" /> Syslogs
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/logs`" class="tab-item" active-class="tab-active">
-            <AlertCircle class="w-4 h-4" /> Alerts
-          </RouterLink>
-          <RouterLink :to="`/server/${currentServer.id}/settings`" class="tab-item" active-class="tab-active">
-            <Settings class="w-4 h-4" /> Config
-          </RouterLink>
-        </nav>
+      <!-- Navigation card — liquid glass -->
+      <nav class="rounded-2xl border overflow-hidden"
+           :class="isDark ? 'border-white/8' : 'border-white/30'"
+           :style="isDark
+             ? 'background: rgba(15,23,42,0.55); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: 0 4px 24px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.06);'
+             : 'background: rgba(255,255,255,0.55); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); box-shadow: 0 4px 24px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8);'">
+        <RouterLink
+          v-for="item in navItems" :key="item.to"
+          :to="item.to"
+          class="sidebar-nav-item"
+          active-class="sidebar-nav-active">
+          <component :is="item.icon" class="w-4 h-4 shrink-0" />
+          <span>{{ item.label }}</span>
+        </RouterLink>
+      </nav>
+    </aside>
+
+    <!-- ── Main content ── -->
+    <div class="flex-1 min-w-0 pb-8">
+      <div v-if="!showLogin">
+        <RouterView :key="route.fullPath" />
       </div>
     </div>
 
-    <!-- Sub-view -->
-    <div class="pt-2" v-if="!showLogin">
-      <RouterView :key="route.fullPath" />
-    </div>
-
-    <!-- Terminal Modal — pakai Teleport ke body, render via visible prop -->
+    <!-- Terminal Modal -->
     <NativeTerminal :visible="showTerminal" @close="showTerminal = false" />
 
-    <!-- Login Modal (untuk autentikasi pertama kali / session expired) -->
-    <LoginModal
-      v-if="showLogin"
-      :server="currentServer"
-      @success="onLoginSuccess"
-    />
+    <!-- Login Modal -->
+    <LoginModal v-if="showLogin" :server="currentServer" @success="onLoginSuccess" />
 
-    <!-- Add User Modal (untuk tambah user baru ke switcher) -->
+    <!-- Add User Modal -->
     <Teleport to="body">
       <div v-if="showAddUserModal"
         class="fixed inset-0 z-[200] backdrop-blur-sm flex items-center justify-center p-4"
         :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/60'">
-        <div class="rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
-          :class="isDark ? 'bg-slate-800' : 'bg-white'">
-
-          <!-- Header -->
+        <div class="rounded-2xl w-full max-w-sm overflow-hidden"
+          :class="isDark ? 'bg-slate-800' : 'bg-white'"
+          style="box-shadow: var(--shadow-modal)">
           <div class="px-6 py-5 flex items-center gap-3 border-b"
             :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-900'">
             <div class="w-9 h-9 rounded-lg bg-brand-600 flex items-center justify-center shrink-0">
@@ -328,20 +307,39 @@ onUnmounted(() => {
               <div class="text-slate-400 text-xs font-mono truncate mt-0.5">{{ currentServer?.name }} · {{ currentServer?.url }}</div>
             </div>
           </div>
-
-          <!-- Form -->
-          <AddUserForm
-            :server="currentServer"
-            @success="handleAddUserSuccess"
-            @cancel="showAddUserModal = false"
-          />
+          <AddUserForm :server="currentServer" @success="handleAddUserSuccess" @cancel="showAddUserModal = false" />
         </div>
       </div>
     </Teleport>
   </div>
 
-  <div v-else class="text-center py-12 text-slate-500 dark:text-slate-400 flex flex-col items-center justify-center">
-    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600 mb-4"></div>
-    Loading server context...
+  <div v-else class="text-center py-12 text-slate-500 dark:text-slate-400 flex flex-col items-center justify-center gap-3">
+    <Loader2 class="w-6 h-6 animate-spin text-brand-500" />
+    <span class="text-sm">Loading server context...</span>
   </div>
 </template>
+
+<style scoped>
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  transition: all 0.15s;
+  color: v-bind("isDark ? '#94a3b8' : '#64748b'");
+  border-left: 2px solid transparent;
+}
+
+.sidebar-nav-item:hover {
+  color: v-bind("isDark ? '#e2e8f0' : '#1e293b'");
+  background: v-bind("isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'");
+}
+
+.sidebar-nav-active {
+  color: v-bind("isDark ? '#67e8f9' : '#0891b2'") !important;
+  background: v-bind("isDark ? 'rgba(6,182,212,0.1)' : 'rgba(6,182,212,0.08)'") !important;
+  border-left-color: v-bind("isDark ? '#22d3ee' : '#06b6d4'") !important;
+}
+</style>

@@ -71,15 +71,7 @@ async fn main() {
     let public_routes = Router::new()
         .route("/api/ping", get(|| async { "pong" }))
         .route("/api/auth/login", post(routes::auth::login_handler))
-        .route("/api/auth/refresh", post(routes::auth::refresh_token_handler))
-        .route("/api/auth/github", get(routes::auth::github_auth_handler));
-
-    // ── GitHub routes dengan AppState tapi tanpa JWT middleware ──
-    let github_routes = Router::new()
-        .route("/api/auth/github/callback", get(routes::auth::github_callback_handler))
-        .route("/api/auth/github/heartbeat", post(routes::auth::github_heartbeat_handler))
-        .route("/api/auth/github/users", get(routes::auth::github_users_handler))
-        .with_state(state.clone());
+        .route("/api/auth/refresh", post(routes::auth::refresh_token_handler));
 
     // ── Routes with ContainerState
     let container_routes = Router::new()
@@ -197,7 +189,6 @@ async fn main() {
 
     let app = Router::new()
         .merge(public_routes)
-        .merge(github_routes)
         .merge(protected_routes)
         .layer(cors);
 

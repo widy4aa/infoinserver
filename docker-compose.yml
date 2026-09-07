@@ -1,12 +1,24 @@
 version: '3.8'
 
 services:
-  # Deploy UI (Frontend) via Nginx
+  # Frontend + GitHub OAuth server (Bun + Hono)
   dashboard-ui:
     build:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: server-monitor-ui
     ports:
-      - "3000:80"
+      - "3000:3000"
     restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      FRONTEND_PORT: 3000
+      RUST_BACKEND_URL: http://host.gateway.internal:8080
+      FRONTEND_URL: ${FRONTEND_URL:-http://127.0.0.1:3000}
+      JWT_SECRET: ${JWT_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI}
+      GITHUB_SESSION_SECRET: ${GITHUB_SESSION_SECRET}
+    extra_hosts:
+      - "host.gateway.internal:host-gateway"

@@ -141,9 +141,9 @@ const chartColors = computed(() => ({
   tooltipBg: isDark.value ? 'rgba(15, 23, 42, 0.95)' : 'rgba(15, 23, 42, 0.9)',
   
   // Dataset colors (same, work on both backgrounds)
-  cpu: { border: '#3b82f6', fill: 'rgba(59, 130, 246, 0.15)' },
-  mem: { border: '#a855f7', fill: 'rgba(168, 85, 247, 0.15)' },
-  disk: { border: '#f59e0b', fill: 'rgba(245, 158, 11, 0.15)' },
+  cpu: { border: '#06b6d4', fill: 'rgba(6, 182, 212, 0.12)' },
+  mem: { border: '#a855f7', fill: 'rgba(168, 85, 247, 0.12)' },
+  disk: { border: '#f59e0b', fill: 'rgba(245, 158, 11, 0.12)' },
   netRx: '#10b981',
   netTx: '#ef4444',
 }))
@@ -338,78 +338,194 @@ onUnmounted(() => {
         <!-- Live System Resources -->
         <div class="card">
           <h2 class="card-title"><Cpu class="w-5 h-5 text-brand-500" /> System Resources</h2>
-          
+
           <div v-if="!sysInfo" class="flex items-center gap-2 text-slate-500 dark:text-slate-400 text-sm">
             <Loader2 class="w-4 h-4 animate-spin" /> Loading metrics...
           </div>
 
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 items-stretch">
-            <div class="p-4 bg-slate-50 rounded-lg border border-slate-100 flex flex-col justify-center dark:bg-slate-800/50 dark:border-slate-700">
-              <div class="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">Hostname & OS</div>
-              <div class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <!-- Distro Icon -->
-                <img v-if="getDistroIcon(sysInfo.os_name)" :src="getDistroIcon(sysInfo.os_name)" :alt="sysInfo.os_name" class="w-5 h-5 object-contain shrink-0" />
-                {{ sysInfo.hostname }}
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                  {{ sysInfo.current_user }}
-                </span>
+          <div v-else class="space-y-6 mt-4">
+
+            <!-- Row 1: Hostname + Uptime stat cards -->
+            <div class="grid grid-cols-2 gap-3">
+              <!-- Hostname card -->
+              <div class="rounded-xl p-4 border border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/40 space-y-1">
+                <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">Hostname</div>
+                <div class="flex items-center gap-2 min-w-0">
+                  <img v-if="getDistroIcon(sysInfo.os_name)" :src="getDistroIcon(sysInfo.os_name)" :alt="sysInfo.os_name" class="w-4 h-4 object-contain shrink-0" />
+                  <span class="font-bold text-sm text-slate-800 dark:text-slate-100 truncate">{{ sysInfo.hostname }}</span>
+                </div>
+                <div class="text-[10px] text-slate-400 dark:text-slate-500 font-mono truncate">{{ sysInfo.os_name }}</div>
+                <div class="text-[10px] text-slate-400 dark:text-slate-600 font-mono truncate">{{ sysInfo.kernel_version }}</div>
               </div>
-              <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ sysInfo.os_name }} • {{ sysInfo.kernel_version }}</div>
+
+              <!-- Uptime card -->
+              <div class="rounded-xl p-4 border border-green-100 dark:border-green-900/40 bg-green-50/60 dark:bg-green-900/10 space-y-1">
+                <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-green-500 dark:text-green-600">Uptime</div>
+                <div class="font-bold text-lg text-green-700 dark:text-green-300 leading-tight">{{ formatUptime(sysInfo.uptime) }}</div>
+                <div class="flex items-center gap-1.5 mt-1">
+                  <span class="text-[10px] font-semibold uppercase tracking-[0.06em]"
+                        :class="isDark ? 'text-cyan-400' : 'text-cyan-600'">
+                    {{ sysInfo.current_user }}
+                  </span>
+                </div>
+              </div>
             </div>
-            
-            <div class="p-4 bg-green-50 rounded-lg border border-green-100 flex flex-col justify-center dark:bg-green-900/20 dark:border-green-800">
-              <div class="text-sm font-medium text-green-600 dark:text-green-400 mb-1">Uptime</div>
-              <div class="font-bold text-green-700 dark:text-green-300 text-lg">{{ formatUptime(sysInfo.uptime) }}</div>
-            </div>
-            
-            <div class="p-4 bg-brand-50 rounded-lg border border-brand-100 md:col-span-2 dark:bg-blue-900/20 dark:border-blue-800">
-              <div class="flex flex-col gap-2">
-                <div>
-                  <div class="text-sm font-medium text-brand-600 dark:text-brand-400">CPU Usage ({{ sysInfo.cpu_cores }} Cores)</div>
-                  <div class="text-xs text-brand-500/70 dark:text-brand-400/60 font-mono truncate mt-0.5 w-full" :title="sysInfo.cpu_model">
-                    {{ sysInfo.cpu_model }}
+
+            <!-- Row 2: CPU + RAM + Swap + Temp — 4 donut gauges -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+              <!-- CPU gauge -->
+              <div class="rounded-xl p-4 border border-cyan-100 dark:border-cyan-900/30 bg-cyan-50/40 dark:bg-cyan-900/8 flex flex-col items-center gap-3">
+                <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-500 self-start">CPU</div>
+                <div class="relative w-20 h-20">
+                  <svg viewBox="0 0 36 36" class="w-20 h-20 -rotate-90">
+                    <circle cx="18" cy="18" r="15.9" fill="none"
+                      :stroke="isDark ? 'rgba(6,182,212,0.15)' : 'rgba(6,182,212,0.12)'"
+                      stroke-width="3.2" />
+                    <circle cx="18" cy="18" r="15.9" fill="none"
+                      stroke="#06b6d4" stroke-width="3.2" stroke-linecap="round"
+                      :stroke-dasharray="`${(sysInfo.global_cpu_usage||0) * 0.999} 100`"
+                      style="transition: stroke-dasharray 0.4s ease" />
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span class="text-lg font-bold text-brand-600 dark:text-brand-300 leading-none">{{ (sysInfo.global_cpu_usage||0).toFixed(0) }}</span>
+                    <span class="text-[9px] text-slate-400 font-mono">%</span>
                   </div>
                 </div>
-                <div class="flex items-center gap-3">
-                  <div class="text-2xl font-bold text-brand-700 dark:text-brand-300 w-20">{{ sysInfo.global_cpu_usage?.toFixed(1) }}%</div>
-                  <div class="flex-1 bg-brand-200 rounded-full h-2.5 overflow-hidden dark:bg-brand-800">
-                    <div class="bg-brand-500 h-2.5 rounded-full transition-all duration-300" :style="`width: ${Math.min(Math.max(sysInfo.global_cpu_usage||0, 0), 100)}%`"></div>
+                <div class="text-center space-y-0.5 w-full">
+                  <div class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate" :title="sysInfo.cpu_model">{{ sysInfo.cpu_model }}</div>
+                  <div class="text-[10px] text-slate-400 dark:text-slate-500">{{ sysInfo.cpu_cores }} cores</div>
+                </div>
+              </div>
+
+              <!-- RAM gauge -->
+              <div class="rounded-xl p-4 border border-purple-100 dark:border-purple-900/30 bg-purple-50/40 dark:bg-purple-900/8 flex flex-col items-center gap-3">
+                <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-purple-500 self-start">Memory</div>
+                <div class="relative w-20 h-20">
+                  <svg viewBox="0 0 36 36" class="w-20 h-20 -rotate-90">
+                    <circle cx="18" cy="18" r="15.9" fill="none"
+                      :stroke="isDark ? 'rgba(168,85,247,0.15)' : 'rgba(168,85,247,0.12)'"
+                      stroke-width="3.2" />
+                    <circle cx="18" cy="18" r="15.9" fill="none"
+                      stroke="#a855f7" stroke-width="3.2" stroke-linecap="round"
+                      :stroke-dasharray="`${Math.min(sysInfo.used_memory/sysInfo.total_memory*100,100)*0.999} 100`"
+                      style="transition: stroke-dasharray 0.4s ease" />
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span class="text-lg font-bold text-purple-600 dark:text-purple-300 leading-none">{{ (sysInfo.used_memory/sysInfo.total_memory*100).toFixed(0) }}</span>
+                    <span class="text-[9px] text-slate-400 font-mono">%</span>
                   </div>
                 </div>
-              </div>
-            </div>
-            
-            <div class="p-4 bg-purple-50 rounded-lg border border-purple-100 md:col-span-2 dark:bg-purple-900/20 dark:border-purple-800">
-              <div class="text-sm font-medium text-purple-600 dark:text-purple-400 mb-2">Memory (RAM)</div>
-              <div class="flex items-center gap-3">
-                <div class="font-bold text-purple-700 dark:text-purple-300 w-32 whitespace-nowrap text-sm">
-                  {{ (sysInfo.used_memory / 1024 / 1024 / 1024).toFixed(2) }} GB / {{ (sysInfo.total_memory / 1024 / 1024 / 1024).toFixed(2) }} GB
-                </div>
-                <div class="flex-1 bg-purple-200 rounded-full h-2.5 overflow-hidden dark:bg-purple-800">
-                  <div class="bg-purple-500 h-2.5 rounded-full transition-all duration-300" :style="`width: ${Math.min(sysInfo.used_memory/sysInfo.total_memory*100, 100)}%`"></div>
+                <div class="text-center space-y-0.5">
+                  <div class="text-xs font-semibold text-purple-700 dark:text-purple-300">{{ (sysInfo.used_memory/1073741824).toFixed(1) }} GB</div>
+                  <div class="text-[10px] text-slate-400 dark:text-slate-500">of {{ (sysInfo.total_memory/1073741824).toFixed(1) }} GB</div>
                 </div>
               </div>
-            </div>
-            
-            <div class="p-4 bg-amber-50 rounded-lg border border-amber-100 md:col-span-2 dark:bg-amber-900/20 dark:border-amber-800">
-              <div class="text-sm font-medium text-amber-600 dark:text-amber-400 mb-2">Storage (Disks)</div>
-              <div class="space-y-3 max-h-48 overflow-y-auto pr-1">
-                <div v-for="disk in sysInfo.disks" :key="disk.mount_point" class="flex flex-col">
-                  <div class="flex justify-between items-center text-xs mb-1" v-if="disk.total_space > 0">
-                    <span class="font-medium text-amber-900 dark:text-amber-100 truncate flex-1 pr-2" :title="disk.mount_point">
-                      {{ disk.mount_point }} <span class="text-amber-600 dark:text-amber-400 font-normal">({{ disk.name }})</span>
+
+              <!-- Swap gauge -->
+              <div class="rounded-xl p-4 border flex flex-col items-center gap-3"
+                   :class="sysInfo.total_swap > 0
+                     ? 'border-indigo-100 dark:border-indigo-900/30 bg-indigo-50/40 dark:bg-indigo-900/8'
+                     : 'border-slate-100 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-800/30 opacity-50'">
+                <div class="text-[10px] font-semibold uppercase tracking-[0.08em] self-start"
+                     :class="sysInfo.total_swap > 0 ? 'text-indigo-500' : 'text-slate-400'">Swap</div>
+                <div class="relative w-20 h-20">
+                  <svg viewBox="0 0 36 36" class="w-20 h-20 -rotate-90">
+                    <circle cx="18" cy="18" r="15.9" fill="none"
+                      :stroke="isDark ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.12)'"
+                      stroke-width="3.2" />
+                    <circle v-if="sysInfo.total_swap > 0" cx="18" cy="18" r="15.9" fill="none"
+                      stroke="#6366f1" stroke-width="3.2" stroke-linecap="round"
+                      :stroke-dasharray="`${Math.min(sysInfo.used_swap/sysInfo.total_swap*100,100)*0.999} 100`"
+                      style="transition: stroke-dasharray 0.4s ease" />
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span class="text-lg font-bold leading-none"
+                          :class="sysInfo.total_swap > 0 ? 'text-indigo-600 dark:text-indigo-300' : 'text-slate-400'">
+                      {{ sysInfo.total_swap > 0 ? (sysInfo.used_swap/sysInfo.total_swap*100).toFixed(0) : '—' }}
                     </span>
-                    <span class="text-amber-700 dark:text-amber-300 whitespace-nowrap">
-                      {{ ((disk.total_space - disk.available_space)/1073741824).toFixed(1) }} GB / {{ (disk.total_space/1073741824).toFixed(1) }} GB
-                    </span>
+                    <span class="text-[9px] text-slate-400 font-mono">{{ sysInfo.total_swap > 0 ? '%' : '' }}</span>
                   </div>
-                  <div class="w-full bg-amber-200 rounded-full h-2 overflow-hidden dark:bg-amber-800" v-if="disk.total_space > 0">
-                    <div class="bg-amber-500 h-full rounded-full transition-all duration-300" :style="`width: ${Math.min(((disk.total_space-disk.available_space)/disk.total_space)*100, 100)}%`"></div>
+                </div>
+                <div class="text-center space-y-0.5">
+                  <div v-if="sysInfo.total_swap > 0" class="text-xs font-semibold text-indigo-700 dark:text-indigo-300">{{ (sysInfo.used_swap/1073741824).toFixed(1) }} GB</div>
+                  <div v-else class="text-xs text-slate-400">No swap</div>
+                  <div v-if="sysInfo.total_swap > 0" class="text-[10px] text-slate-400 dark:text-slate-500">of {{ (sysInfo.total_swap/1073741824).toFixed(1) }} GB</div>
+                </div>
+              </div>
+
+              <!-- CPU Temp gauge -->
+              <div class="rounded-xl p-4 border flex flex-col items-center gap-3"
+                   :class="sysInfo.cpu_temp != null
+                     ? 'border-rose-100 dark:border-rose-900/30 bg-rose-50/40 dark:bg-rose-900/8'
+                     : 'border-slate-100 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-800/30 opacity-50'">
+                <div class="text-[10px] font-semibold uppercase tracking-[0.08em] self-start"
+                     :class="sysInfo.cpu_temp != null ? 'text-rose-500' : 'text-slate-400'">Temp</div>
+                <div class="relative w-20 h-20">
+                  <svg viewBox="0 0 36 36" class="w-20 h-20 -rotate-90">
+                    <circle cx="18" cy="18" r="15.9" fill="none"
+                      :stroke="isDark ? 'rgba(244,63,94,0.15)' : 'rgba(244,63,94,0.12)'"
+                      stroke-width="3.2" />
+                    <circle v-if="sysInfo.cpu_temp != null" cx="18" cy="18" r="15.9" fill="none"
+                      :stroke="sysInfo.cpu_temp > 85 ? '#ef4444' : sysInfo.cpu_temp > 70 ? '#f59e0b' : '#f43f5e'"
+                      stroke-width="3.2" stroke-linecap="round"
+                      :stroke-dasharray="`${Math.min(sysInfo.cpu_temp / 100 * 100, 100) * 0.999} 100`"
+                      style="transition: stroke-dasharray 0.4s ease" />
+                  </svg>
+                  <div class="absolute inset-0 flex flex-col items-center justify-center">
+                    <span class="text-lg font-bold leading-none"
+                          :class="sysInfo.cpu_temp != null
+                            ? (sysInfo.cpu_temp > 85 ? 'text-red-600 dark:text-red-400' : sysInfo.cpu_temp > 70 ? 'text-amber-500' : 'text-rose-600 dark:text-rose-300')
+                            : 'text-slate-400'">
+                      {{ sysInfo.cpu_temp != null ? sysInfo.cpu_temp.toFixed(0) : '—' }}
+                    </span>
+                    <span class="text-[9px] text-slate-400 font-mono">°C</span>
+                  </div>
+                </div>
+                <div class="text-center">
+                  <div v-if="sysInfo.cpu_temp != null" class="text-[10px] font-semibold"
+                       :class="sysInfo.cpu_temp > 85 ? 'text-red-500' : sysInfo.cpu_temp > 70 ? 'text-amber-500' : 'text-rose-400'">
+                    {{ sysInfo.cpu_temp > 85 ? 'Critical' : sysInfo.cpu_temp > 70 ? 'Warm' : 'Normal' }}
+                  </div>
+                  <div v-else class="text-[10px] text-slate-400">Not available</div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Row 3: Disk — compact bars -->
+            <div class="rounded-xl p-4 border border-amber-100 dark:border-amber-900/30 bg-amber-50/40 dark:bg-amber-900/8">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-500 mb-3">Storage</div>
+              <div class="space-y-2.5 max-h-40 overflow-y-auto pr-1">
+                <div v-for="disk in sysInfo.disks" :key="disk.mount_point">
+                  <div v-if="disk.total_space > 0" class="space-y-1">
+                    <div class="flex justify-between items-center">
+                      <span class="text-xs font-medium truncate flex-1 pr-2"
+                            :class="isDark ? 'text-amber-200' : 'text-amber-900'"
+                            :title="disk.mount_point">
+                        {{ disk.mount_point }}
+                        <span class="font-normal" :class="isDark ? 'text-amber-500' : 'text-amber-500'"> {{ disk.name }}</span>
+                      </span>
+                      <span class="text-[10px] font-mono whitespace-nowrap" :class="isDark ? 'text-amber-400' : 'text-amber-600'">
+                        {{ ((disk.total_space-disk.available_space)/1073741824).toFixed(1) }} / {{ (disk.total_space/1073741824).toFixed(1) }} GB
+                      </span>
+                    </div>
+                    <!-- Segmented bar -->
+                    <div class="w-full h-1.5 rounded-full overflow-hidden"
+                         :class="isDark ? 'bg-amber-900/40' : 'bg-amber-200/60'">
+                      <div class="h-full rounded-full transition-all duration-300"
+                           :class="((disk.total_space-disk.available_space)/disk.total_space*100) > 90
+                             ? 'bg-red-500'
+                             : ((disk.total_space-disk.available_space)/disk.total_space*100) > 70
+                               ? 'bg-amber-500'
+                               : 'bg-amber-400'"
+                           :style="`width: ${Math.min(((disk.total_space-disk.available_space)/disk.total_space)*100,100)}%`" />
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
+
           </div>
         </div>
 

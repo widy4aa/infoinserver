@@ -247,25 +247,53 @@ const handleUpload = async (event) => {
   }
 }
 
-const fetchUrl = async () => {
+const fetchUrl = () => {
   if (isReadOnly.value) return showToast("Warning", "Read-only path", "warning")
-  const url = prompt("Enter URL to download:")
-  if (!url) return
-  try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/files/fetch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, path: currentPath.value })
-    })
-    if (res.ok) {
-      showToast("Success", "File fetched", "success")
-      fetchFiles(currentPath.value)
-    } else {
-      showToast("Error", await res.text(), "error")
+  openInputModal({
+    title: 'Fetch from URL',
+    label: 'URL to download',
+    placeholder: 'https://example.com/file.zip',
+    defaultValue: '',
+    onConfirm: async (url) => {
+      if (!url) return
+      try {
+        const res = await apiFetch(`${getActiveServerUrl()}/api/files/fetch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, path: currentPath.value })
+        })
+        if (res.ok) {
+          showToast("Success", "File fetched", "success")
+          fetchFiles(currentPath.value)
+        } else {
+          showToast("Error", await res.text(), "error")
+        }
+      } catch (e) {
+        showToast("Error", "Fetch failed", "error")
+      }
     }
-  } catch (e) {
-    showToast("Error", "Fetch failed", "error")
-  }
+  })
+}
+
+// ── INPUT MODAL (replaces native prompt()) ──
+const inputModal = ref({ visible: false, title: '', label: '', placeholder: '', value: '', onConfirm: null })
+const inputModalRef = ref(null)
+
+const openInputModal = ({ title, label, placeholder, defaultValue, onConfirm }) => {
+  inputModal.value = { visible: true, title, label, placeholder: placeholder || '', value: defaultValue || '', onConfirm }
+  // Auto-focus input on next tick
+  setTimeout(() => inputModalRef.value?.focus(), 50)
+}
+
+const confirmInputModal = () => {
+  const cb = inputModal.value.onConfirm
+  const val = inputModal.value.value
+  inputModal.value.visible = false
+  if (cb) cb(val)
+}
+
+const cancelInputModal = () => {
+  inputModal.value.visible = false
 }
 
 // ── CONTEXT MENU ──
@@ -305,18 +333,39 @@ const ctxAction = async (action) => {
     return
   }
   if (action === 'rename') {
-    const newName = prompt("New name:", f.name)
-    if (newName && newName !== f.name) await fileAction({ action: 'rename', target, destination: newName })
+    openInputModal({
+      title: 'Rename',
+      label: 'New name',
+      placeholder: f.name,
+      defaultValue: f.name,
+      onConfirm: async (newName) => {
+        if (newName && newName !== f.name) await fileAction({ action: 'rename', target, destination: newName })
+      }
+    })
     return
   }
   if (action === 'copy') {
-    const dest = prompt("Copy to path:", currentPath.value + '/')
-    if (dest) await fileAction({ action: 'copy', target, destination: dest + f.name })
+    openInputModal({
+      title: 'Copy To',
+      label: 'Destination path',
+      placeholder: currentPath.value + '/',
+      defaultValue: currentPath.value + '/',
+      onConfirm: async (dest) => {
+        if (dest) await fileAction({ action: 'copy', target, destination: dest + f.name })
+      }
+    })
     return
   }
   if (action === 'move') {
-    const dest = prompt("Move to path:", currentPath.value + '/')
-    if (dest) await fileAction({ action: 'move', target, destination: dest + f.name })
+    openInputModal({
+      title: 'Move To',
+      label: 'Destination path',
+      placeholder: currentPath.value + '/',
+      defaultValue: currentPath.value + '/',
+      onConfirm: async (dest) => {
+        if (dest) await fileAction({ action: 'move', target, destination: dest + f.name })
+      }
+    })
     return
   }
   if (action === 'compress') {
@@ -993,7 +1042,8 @@ onUnmounted(() => {
   <Teleport to="body">
     <div v-if="editor.visible" class="fixed inset-0 z-[100] backdrop-blur-sm flex items-center justify-center p-4"
          :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
-      <div class="rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden"
+      <div class="rounded-xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden"
+           style="box-shadow: var(--shadow-modal)"
            :class="isDark ? 'bg-slate-800' : 'bg-white'">
         <div class="p-3 border-b flex items-center justify-between shrink-0"
              :class="isDark ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'">
@@ -1026,7 +1076,7 @@ onUnmounted(() => {
   <Teleport to="body">
     <div v-if="infoModal.visible" class="fixed inset-0 z-[200] backdrop-blur-sm flex items-center justify-center p-4"
          :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/60'">
-      <div class="rounded-xl shadow-2xl w-full max-w-md overflow-hidden" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+      <div class="rounded-xl w-full max-w-md overflow-hidden" style="box-shadow: var(--shadow-modal)" :class="isDark ? 'bg-slate-800' : 'bg-white'">
         <div class="p-4 border-b flex items-center justify-between" :class="isDark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-slate-50'">
           <h3 class="font-bold text-sm flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'">
             <Info class="w-4 h-4 text-brand-500" /> File Information
@@ -1090,7 +1140,7 @@ onUnmounted(() => {
   <Teleport to="body">
     <div v-if="chmodModal.visible" class="fixed inset-0 z-[200] backdrop-blur-sm flex items-center justify-center p-4"
          :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/60'">
-      <div class="rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+      <div class="rounded-xl w-full max-w-sm overflow-hidden" style="box-shadow: var(--shadow-modal)" :class="isDark ? 'bg-slate-800' : 'bg-white'">
         <div class="p-4 border-b flex items-center justify-between" :class="isDark ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-slate-50'">
           <h3 class="font-bold text-sm flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'">
             <Lock class="w-4 h-4 text-brand-500" /> Permissions
@@ -1140,12 +1190,44 @@ onUnmounted(() => {
 
           <!-- Actions -->
           <div class="flex justify-end gap-2 pt-1">
-            <button @click="chmodModal.visible = false" class="btn-outline text-xs">Cancel</button>
+            <button @click="chmodModal.visible = false" class="btn-secondary text-xs">Cancel</button>
             <button @click="applyChmod" class="btn-primary text-xs" :disabled="chmodModal.isApplying">
               <Loader2 v-if="chmodModal.isApplying" class="w-3.5 h-3.5 animate-spin" />
               {{ chmodModal.isApplying ? 'Applying...' : 'Apply' }}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- ── INPUT MODAL (replaces native prompt()) ── -->
+  <Teleport to="body">
+    <div v-if="inputModal.visible" class="fixed inset-0 z-[300] backdrop-blur-sm flex items-center justify-center p-4"
+         :class="isDark ? 'bg-slate-950/80' : 'bg-slate-900/50'">
+      <div class="rounded-xl w-full max-w-sm overflow-hidden" style="box-shadow: var(--shadow-modal)"
+           :class="isDark ? 'bg-slate-800' : 'bg-white'">
+        <!-- Header -->
+        <div class="p-4 border-b flex items-center justify-between bg-slate-900">
+          <h3 class="font-bold text-sm text-slate-100">{{ inputModal.title }}</h3>
+          <button @click="cancelInputModal" class="text-slate-400 hover:text-slate-200"><X class="w-4 h-4" /></button>
+        </div>
+        <!-- Body -->
+        <div class="p-5 space-y-3">
+          <label class="block text-xs font-semibold" :class="isDark ? 'text-slate-400' : 'text-slate-500'">{{ inputModal.label }}</label>
+          <input
+            v-model="inputModal.value"
+            type="text"
+            class="input-field w-full"
+            :placeholder="inputModal.placeholder"
+            @keyup.enter="confirmInputModal"
+            ref="inputModalRef"
+          />
+        </div>
+        <!-- Footer -->
+        <div class="p-4 border-t flex justify-end gap-2" :class="isDark ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'">
+          <button @click="cancelInputModal" class="btn-secondary">Cancel</button>
+          <button @click="confirmInputModal" class="btn-primary">Confirm</button>
         </div>
       </div>
     </div>

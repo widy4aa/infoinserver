@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useThemeStore } from '../stores/themeStore'
-import { AlertTriangle, AlertCircle, Info, Activity } from 'lucide-vue-next'
+import { AlertTriangle, AlertCircle, Info, Activity, Loader2 } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
 const { getActiveServerUrl } = useServerStore()
@@ -42,14 +42,14 @@ onMounted(() => {
     <section class="card">
       <div class="flex items-center justify-between mb-4">
         <h2 class="card-title mb-0"><Activity class="w-5 h-5 text-brand-500" /> Activity Logs &amp; Alerts</h2>
-        <button @click="fetchLogs" class="btn-outline btn-sm">Refresh</button>
+        <button @click="fetchLogs" class="btn-secondary">Refresh</button>
       </div>
       <p class="text-sm text-slate-500 mb-6">
-        Log ini dicatat secara otomatis oleh background scheduler ketika mendeteksi lonjakan pemakaian CPU, Memory, atau masalah Disk Space.
+        These logs are automatically recorded by the background scheduler. Critical alerts are sent to the admin.
       </p>
 
       <div v-if="isLoading" class="flex justify-center p-8">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+        <Loader2 class="w-5 h-5 animate-spin text-brand-500" />
       </div>
       
       <div v-else-if="logs.length === 0" class="text-center p-8 border border-dashed rounded-lg" :class="isDark ? 'border-slate-700 text-slate-500 bg-slate-800/50' : 'border-slate-200 text-slate-500 bg-slate-50'">

@@ -421,15 +421,15 @@ onUnmounted(() => clearInterval(pollInterval))
         <div v-else class="flex items-center gap-2 text-red-500 text-sm">
           <AlertCircle class="w-4 h-4" />
           No container runtime detected
-          <button @click="refreshRuntime" class="btn-outline text-xs">Retry</button>
+          <button @click="refreshRuntime" class="btn-secondary text-xs">Retry</button>
         </div>
       </div>
 
       <div class="flex gap-2">
-        <button @click="refreshRuntime" class="btn-outline text-xs">
+        <button @click="refreshRuntime" class="btn-secondary text-xs">
           <RefreshCw class="w-3.5 h-3.5" /> Refresh Runtime
         </button>
-        <button @click="async () => { await fetchContainers(); await fetchCompose() }" class="btn-outline text-xs">
+        <button @click="async () => { await fetchContainers(); await fetchCompose() }" class="btn-secondary text-xs">
           <RefreshCw class="w-3.5 h-3.5" /> Sync
         </button>
       </div>
@@ -528,7 +528,7 @@ onUnmounted(() => clearInterval(pollInterval))
                         <Square class="w-3.5 h-3.5" />
                       </button>
                       <button @click="performAction('restart', c.id, c.name)"
-                        class="p-1.5 rounded text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30" title="Restart">
+                        class="btn-icon-primary" title="Restart">
                         <RefreshCw class="w-3.5 h-3.5" />
                       </button>
                       <button @click="viewLogs(c.id, c.name)"
@@ -594,7 +594,7 @@ onUnmounted(() => clearInterval(pollInterval))
                 </div>
                 <!-- Project actions -->
                 <div class="flex items-center gap-1 flex-shrink-0" @click.stop>
-                  <button @click="composeAction('restart', project.name)" class="p-1.5 rounded" :class="isDark ? 'text-blue-400 hover:bg-blue-900/30' : 'text-blue-600 hover:bg-blue-50'" title="Restart">
+                  <button @click="composeAction('restart', project.name)" class="btn-icon-primary" title="Restart">
                     <RefreshCw class="w-3.5 h-3.5" />
                   </button>
                   <button v-if="project.source === 'managed'" @click="composeAction('rebuild', project.name)" class="p-1.5 rounded" :class="isDark ? 'text-indigo-400 hover:bg-indigo-900/30' : 'text-indigo-600 hover:bg-indigo-50'" title="Rebuild (force recreate)">
@@ -745,7 +745,7 @@ onUnmounted(() => clearInterval(pollInterval))
     <!-- ── Logs Modal ────────────────────────────────────────────── -->
     <Teleport to="body">
       <div v-if="logsModal.open" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="logsModal.open = false">
-        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+        <div class="bg-white dark:bg-slate-800 rounded-xl w-full max-w-4xl max-h-[80vh] flex flex-col" style="box-shadow: var(--shadow-modal)">
           <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
             <h3 class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2"><Terminal class="w-4 h-4 text-brand-500" />{{ logsModal.title }}</h3>
             <button @click="logsModal.open = false" class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"><X class="w-4 h-4" /></button>
@@ -763,7 +763,7 @@ onUnmounted(() => clearInterval(pollInterval))
     <!-- ── Inspect Modal ─────────────────────────────────────────── -->
     <Teleport to="body">
       <div v-if="inspectModal.open" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="inspectModal.open = false">
-        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+        <div class="bg-white dark:bg-slate-800 rounded-xl w-full max-w-4xl max-h-[80vh] flex flex-col" style="box-shadow: var(--shadow-modal)">
           <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
             <h3 class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2"><ZoomIn class="w-4 h-4 text-brand-500" />{{ inspectModal.title }}</h3>
             <button @click="inspectModal.open = false" class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"><X class="w-4 h-4" /></button>
@@ -778,20 +778,20 @@ onUnmounted(() => clearInterval(pollInterval))
     <!-- ── YAML Modal ────────────────────────────────────────────── -->
     <Teleport to="body">
       <div v-if="yamlModal.open" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" @click.self="yamlModal.open = false">
-        <div class="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
+        <div class="bg-white dark:bg-slate-800 rounded-xl w-full max-w-4xl max-h-[85vh] flex flex-col" style="box-shadow: var(--shadow-modal)">
           <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
             <h3 class="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
               <FileText class="w-4 h-4 text-brand-500" />
               {{ yamlModal.projectName }} — docker-compose.yml
             </h3>
             <div class="flex items-center gap-2">
-              <button v-if="!yamlModal.editing" @click="yamlModal.editing = true" class="btn-outline text-xs"><Pencil class="w-3.5 h-3.5" /> Edit</button>
+              <button v-if="!yamlModal.editing" @click="yamlModal.editing = true" class="btn-secondary text-xs"><Pencil class="w-3.5 h-3.5" /> Edit</button>
               <button v-if="yamlModal.editing" @click="saveYaml" class="btn-primary text-xs" :disabled="yamlModal.saving">
                 <Loader2 v-if="yamlModal.saving" class="w-3.5 h-3.5 animate-spin" />
                 <Save v-else class="w-3.5 h-3.5" />
                 {{ yamlModal.saving ? 'Saving...' : 'Save & Apply' }}
               </button>
-              <button v-if="yamlModal.editing" @click="yamlModal.editing = false" class="btn-outline text-xs"><X class="w-3.5 h-3.5" /> Cancel</button>
+              <button v-if="yamlModal.editing" @click="yamlModal.editing = false" class="btn-secondary text-xs"><X class="w-3.5 h-3.5" /> Cancel</button>
               <button @click="yamlModal.open = false" class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"><X class="w-4 h-4" /></button>
             </div>
           </div>
@@ -809,7 +809,7 @@ onUnmounted(() => clearInterval(pollInterval))
     <!-- ── Scale Modal ───────────────────────────────────────────── -->
     <Teleport to="body">
       <div v-if="scaleModal.open" class="fixed inset-0 z-50 flex items-center justify-center p-4" :class="isDark ? 'bg-slate-950/80' : 'bg-black/60'" @click.self="scaleModal.open = false">
-        <div class="rounded-xl shadow-2xl w-full max-w-sm p-5 space-y-4" :class="isDark ? 'bg-slate-800' : 'bg-white'">
+        <div class="rounded-xl w-full max-w-sm p-5 space-y-4" :class="isDark ? 'bg-slate-800' : 'bg-white'" style="box-shadow: var(--shadow-modal)">
           <h3 class="font-semibold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'"><Scaling class="w-4 h-4 text-brand-500" /> Scale Service</h3>
           <div>
             <p class="text-sm" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Service: <strong>{{ scaleModal.service }}</strong></p>
@@ -820,7 +820,7 @@ onUnmounted(() => clearInterval(pollInterval))
             <input v-model.number="scaleModal.count" type="number" min="0" max="20" class="input-field w-32" />
           </div>
           <div class="flex gap-2 justify-end">
-            <button @click="scaleModal.open = false" class="btn-outline text-sm">Cancel</button>
+            <button @click="scaleModal.open = false" class="btn-secondary text-sm">Cancel</button>
             <button @click="doScale" class="btn-primary text-sm"><Scaling class="w-4 h-4" /> Scale</button>
           </div>
         </div>

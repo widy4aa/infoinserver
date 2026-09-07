@@ -565,7 +565,7 @@ onUnmounted(() => {
                 <Loader2 v-if="isStarting" class="w-4 h-4 animate-spin" /><Play v-else class="w-4 h-4" />
                 {{ isStarting ? 'Starting...' : 'Start Service' }}
               </button>
-              <button v-if="status.service_active || status.running" @click="restartService" class="btn-outline justify-center w-full" :disabled="isRestarting">
+              <button v-if="status.service_active || status.running" @click="restartService" class="btn-secondary justify-center w-full" :disabled="isRestarting">
                 <Loader2 v-if="isRestarting" class="w-4 h-4 animate-spin" /><RefreshCw v-else class="w-4 h-4" />
                 {{ isRestarting ? 'Restarting...' : 'Restart' }}
               </button>
@@ -624,7 +624,7 @@ onUnmounted(() => {
                 <h3 class="font-bold text-sm">End-to-End Route Diagnostics</h3>
                 <p class="text-[11px] text-slate-500 mt-0.5">HTTP probes to verify each domain is reachable from the internet</p>
               </div>
-              <button @click="checkHealth" class="btn-outline text-xs" :disabled="isCheckingHealth">
+              <button @click="checkHealth" class="btn-secondary text-xs" :disabled="isCheckingHealth">
                 <Loader2 v-if="isCheckingHealth" class="w-3.5 h-3.5 animate-spin" />
                 <RefreshCw v-else class="w-3.5 h-3.5" />
                 {{ isCheckingHealth ? 'Checking...' : 'Run Diagnostics' }}
@@ -754,20 +754,20 @@ onUnmounted(() => {
                 <span class="text-slate-500">{{ ws && ws.readyState === 1 ? 'Connected' : 'Disconnected' }}</span>
               </div>
               <div class="flex items-center gap-1 ml-auto">
-                <select v-model="logFilter" class="text-xs border rounded-lg px-2 py-1" :class="isDark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-700'">
+                <select v-model="logFilter" class="input-field w-auto py-1.5 text-xs">
                   <option value="all">All Logs</option>
                   <option value="err">Errors Only</option>
                   <option value="wrn">Warnings Only</option>
                 </select>
                 <button @click="isLogsPaused = !isLogsPaused"
-                  class="px-2.5 py-1 rounded-lg text-xs border font-semibold transition-colors"
-                  :class="isLogsPaused ? 'bg-amber-100 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400' : (isDark ? 'border-slate-700 text-slate-400 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-100')">
+                  class="btn-secondary text-xs py-1 px-2.5"
+                  :class="isLogsPaused ? 'bg-amber-100 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400' : ''">
                   {{ isLogsPaused ? 'Resume' : 'Pause' }}
                 </button>
-                <button @click="clearLogs" class="px-2.5 py-1 rounded-lg text-xs border font-semibold" :class="isDark ? 'border-slate-700 text-slate-400 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-100'">
+                <button @click="clearLogs" class="btn-secondary text-xs py-1 px-2.5">
                   Clear
                 </button>
-                <button @click="connectLogsWs" class="px-2.5 py-1 rounded-lg text-xs border font-semibold" :class="isDark ? 'border-slate-700 text-slate-400 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-100'" :disabled="isFetchingLogs">
+                <button @click="connectLogsWs" class="btn-secondary text-xs py-1 px-2.5" :disabled="isFetchingLogs">
                   <Loader2 v-if="isFetchingLogs" class="w-3 h-3 animate-spin inline" />
                   {{ isFetchingLogs ? '' : 'Reconnect' }}
                 </button>
@@ -775,7 +775,7 @@ onUnmounted(() => {
             </div>
 
             <!-- Terminal -->
-            <div ref="logsContainer" class="flex-1 rounded-xl bg-black/90 p-4 font-mono text-[11px] overflow-y-auto scroll-smooth" style="min-height: 0">
+            <div ref="logsContainer" class="flex-1 rounded-xl bg-[#0d1117] p-4 font-mono text-[11px] overflow-y-auto scroll-smooth" style="min-height: 0">
               <div v-if="filteredLogs.length === 0" class="text-slate-600 italic">No logs to display...</div>
               <div v-for="(line, idx) in filteredLogs" :key="idx" class="leading-relaxed py-0.5"
                 :class="{
