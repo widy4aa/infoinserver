@@ -6,11 +6,13 @@ import ToastAlert from './components/ToastAlert.vue'
 import { useToastStore } from './stores/toastStore'
 import { useThemeStore } from './stores/themeStore'
 import { useAuthStore } from './stores/authStore'
+import { useServerStore } from './stores/serverStore'
 // import { useHeartbeat } from './composables/useHeartbeat'
 
 const { showToast } = useToastStore()
 const { isDark, toggleDark } = useThemeStore()
 const { isLoggedIn, githubUser, logout, getToken } = useAuthStore()
+const { loadConfigFromServer } = useServerStore()
 const router = useRouter()
 const route = useRoute()
 const isFullscreen = computed(() => !!route.meta?.fullscreen)
@@ -18,6 +20,11 @@ const hideNav = computed(() => !!route.meta?.hideNav)
 
 // ── Heartbeat (nonaktif sementara — pakai ping di HomeView) ────────
 // useHeartbeat(getToken)
+
+// ── Load frontend config dari Bun SQLite saat login ────────────────
+watch(isLoggedIn, (loggedIn) => {
+  if (loggedIn) loadConfigFromServer(getToken())
+}, { immediate: true })
 
 // ── Global background style (shared across all pages) ──────────────
 const globalBgStyle = computed(() => {

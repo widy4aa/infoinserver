@@ -1,4 +1,4 @@
 Container runtime: podman v6.1.0 (compose: podman compose)
 Server running on http://0.0.0.0:8080
 Scheduler: Running scheduled speedtest...
-Scheduler: Speedtest success - D: 47.73 Mbps, U: 53.82 Mbps
+Scheduler: Speedtest success - D: 35.12 Mbps, U: 47.83 Mbps
