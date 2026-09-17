@@ -1,14 +1,6 @@
 [db] Frontend config DB: ./frontend.db
+[db] Default admin: widy4aa
 [server] Bun+Hono running on http://0.0.0.0:3000
 [server] Mode: production (static)
 [server] Rust backend: http://127.0.0.1:8080
 [server] WebSocket proxy: ws://127.0.0.1:8080
-[ws] Browser connected, opening backend: ws://127.0.0.1:8080/api/metrics/ws?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ3aWR5NGFhIiwicHdkIjoiZGlvIiwiZXhwIjoxNzg4ODc4MTY1fQ.IWLTS8UXpGRA0XgZ8OiTc9BXeVVFF3vcbbjKg6DCwGI
-[ws] Browser disconnected
-[ws] Backend closed: ws://127.0.0.1:8080/api/metrics/ws?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ3aWR5NGFhIiwicHdkIjoiZGlvIiwiZXhwIjoxNzg4ODc4MTY1fQ.IWLTS8UXpGRA0XgZ8OiTc9BXeVVFF3vcbbjKg6DCwGI
-[ws] Browser connected, opening backend: ws://127.0.0.1:8080/api/metrics/ws?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ3aWR5NGFhIiwicHdkIjoiZGlvIiwiZXhwIjoxNzg4ODc4MTY1fQ.IWLTS8UXpGRA0XgZ8OiTc9BXeVVFF3vcbbjKg6DCwGI
-[ws] Browser disconnected
-[ws] Backend closed: ws://127.0.0.1:8080/api/metrics/ws?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ3aWR5NGFhIiwicHdkIjoiZGlvIiwiZXhwIjoxNzg4ODc4MTY1fQ.IWLTS8UXpGRA0XgZ8OiTc9BXeVVFF3vcbbjKg6DCwGI
-[ws] Browser connected, opening backend: ws://127.0.0.1:8080/api/metrics/ws?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ3aWR5NGFhIiwicHdkIjoiZGlvIiwiZXhwIjoxNzg4ODc4MTY1fQ.IWLTS8UXpGRA0XgZ8OiTc9BXeVVFF3vcbbjKg6DCwGI
-[ws] Browser disconnected
-[ws] Backend closed: ws://127.0.0.1:8080/api/metrics/ws?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ3aWR5NGFhIiwicHdkIjoiZGlvIiwiZXhwIjoxNzg4ODc4MTY1fQ.IWLTS8UXpGRA0XgZ8OiTc9BXeVVFF3vcbbjKg6DCwGI

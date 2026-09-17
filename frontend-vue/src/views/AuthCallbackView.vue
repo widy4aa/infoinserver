@@ -2,37 +2,45 @@
 import { onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
+import { useServerStore } from '../stores/serverStore'
 
 const router = useRouter()
-const route = useRoute()
-const { setSession } = useAuthStore()
+const route  = useRoute()
+const { setSession, fetchAndUpdateRole, canWriteConfig, getToken } = useAuthStore()
+const { loadConfigFromServer } = useServerStore()
 
-onMounted(() => {
+onMounted(async () => {
   const error = route.query.error
   if (error) {
     router.replace(`/login?error=${encodeURIComponent(error)}`)
     return
   }
 
-  const token = route.query.token
+  const token    = route.query.token
   const username = route.query.user
-  const name = route.query.name
-  const avatar = route.query.avatar
+  const name     = route.query.name
+  const avatar   = route.query.avatar
 
   if (!token || !username) {
     router.replace('/login?error=missing_params')
     return
   }
 
-  // Simpan session ke localStorage via authStore
+  // 1. Simpan session dasar dulu (role default: slave)
   setSession({
-    token: String(token),
+    token:    String(token),
     username: String(username),
-    name: String(name || username),
-    avatar: String(avatar || ''),
+    name:     String(name || username),
+    avatar:   String(avatar || ''),
   })
 
-  // Redirect ke Home
+  // 2. Fetch role & allowedGroups dari server, update session
+  await fetchAndUpdateRole()
+
+  // 3. Load config global dengan canWrite sesuai role
+  await loadConfigFromServer(String(token), canWriteConfig.value)
+
+  // 4. Redirect ke Home
   router.replace('/')
 })
 </script>

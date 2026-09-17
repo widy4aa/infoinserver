@@ -22,3 +22,4 @@ pub mod process_mgmt;
 pub mod fail2ban;
 pub mod system_updates;
 pub mod disk;
+pub mod vm;

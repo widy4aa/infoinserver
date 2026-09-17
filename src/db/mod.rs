@@ -56,5 +56,28 @@ pub async fn init_db(db_url: &str) -> Result<SqlitePool, sqlx::Error> {
         ).execute(&pool).await;
     }
 
+    // ── vm_instances incremental migrations ──────────────────────────────────
+    // Migrasi dari schema lama (socat_pid) ke schema baru (container_id, image_tag)
+
+    // Tambah container_id jika belum ada
+    let vm_cid: Vec<(String,)> = sqlx::query_as(
+        "SELECT name FROM pragma_table_info('vm_instances') WHERE name = 'container_id'"
+    ).fetch_all(&pool).await.unwrap_or_default();
+    if vm_cid.is_empty() {
+        let _ = sqlx::query(
+            "ALTER TABLE vm_instances ADD COLUMN container_id TEXT NOT NULL DEFAULT ''"
+        ).execute(&pool).await;
+    }
+
+    // Tambah image_tag jika belum ada
+    let vm_img: Vec<(String,)> = sqlx::query_as(
+        "SELECT name FROM pragma_table_info('vm_instances') WHERE name = 'image_tag'"
+    ).fetch_all(&pool).await.unwrap_or_default();
+    if vm_img.is_empty() {
+        let _ = sqlx::query(
+            "ALTER TABLE vm_instances ADD COLUMN image_tag TEXT NOT NULL DEFAULT ''"
+        ).execute(&pool).await;
+    }
+
     Ok(pool)
 }

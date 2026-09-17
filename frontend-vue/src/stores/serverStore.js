@@ -49,14 +49,17 @@ const debounce = (fn, delay) => {
 let _githubToken = null          // di-set dari luar via setGithubToken()
 let _syncEnabled = false         // aktif setelah loadConfigFromServer() selesai
 let _isSyncing   = false         // cegah watch loop saat load
+let _canWrite    = true          // false untuk slave
 
 // Dipanggil dari App.vue saat user login GitHub
 const setGithubToken = (token) => { _githubToken = token }
 
 // GET config dari Bun SQLite → replace localStorage
-const loadConfigFromServer = async (token) => {
+// config sekarang GLOBAL (selalu config admin default)
+const loadConfigFromServer = async (token, canWrite = true) => {
   if (!token) return
   _githubToken = token
+  _canWrite    = canWrite
   try {
     const res = await fetch('/api/frontend/config', {
       headers: { Authorization: `Bearer ${token}` }
@@ -65,11 +68,11 @@ const loadConfigFromServer = async (token) => {
 
     const data = await res.json()
 
-    // exists: false → user baru, tidak ada data di server
-    // Dalam hal ini push localStorage saat ini ke server agar tersimpan
+    // exists: false → belum ada config global.
+    // Jika user bisa write (admin/master), push config lokal saat ini ke server
     if (!data.exists) {
       _syncEnabled = true
-      saveConfigToServer()
+      if (_canWrite) saveConfigToServer()
       return
     }
 
@@ -78,7 +81,6 @@ const loadConfigFromServer = async (token) => {
     servers.value          = data.servers          ?? []
     labels.value           = data.labels           ?? []
     activeServerId.value   = data.active_server_id ?? servers.value[0]?.id ?? ''
-    // Beri waktu Vue flush reactive update sebelum re-enable watch
     setTimeout(() => {
       _isSyncing   = false
       _syncEnabled = true
@@ -91,8 +93,9 @@ const loadConfigFromServer = async (token) => {
 }
 
 // PUT config ke Bun SQLite (debounced 1.5 detik)
+// Hanya dieksekusi jika _canWrite === true (admin atau master)
 const saveConfigToServer = debounce(async () => {
-  if (!_githubToken || !_syncEnabled || _isSyncing) return
+  if (!_githubToken || !_syncEnabled || _isSyncing || !_canWrite) return
   try {
     await fetch('/api/frontend/config', {
       method: 'PUT',

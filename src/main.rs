@@ -179,6 +179,13 @@ async fn main() {
         .route("/api/cloudflare/routes", post(routes::cloudflare_api::add_local_route))
         .route("/api/cloudflare/routes", delete(routes::cloudflare_api::delete_local_route))
         .route("/api/cloudflare/routes/dns", post(routes::cloudflare_api::register_dns_cname))
+        // ── VM (systemd-nspawn) routes
+        .route("/api/vm/list", get(routes::vm::list_vms_handler))
+        .route("/api/vm/create/ws", get(routes::vm::create_vm_ws_handler))
+        .route("/api/vm/{name}/start", post(routes::vm::start_vm_handler))
+        .route("/api/vm/{name}/stop", post(routes::vm::stop_vm_handler))
+        .route("/api/vm/{name}/status", get(routes::vm::vm_status_handler))
+        .route("/api/vm/{name}", delete(routes::vm::delete_vm_handler))
         .with_state(state);
 
     let protected_routes = Router::new()

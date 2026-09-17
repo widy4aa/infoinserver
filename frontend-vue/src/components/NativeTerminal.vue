@@ -22,20 +22,52 @@ const createTab = () => ({
   term: null,
   fitAddon: null,
   ws: null,
+  // initialized = xterm sudah di-mount ke DOM dan WS sudah connect
   initialized: false,
+  // el = referensi DOM container xterm
   el: null,
+  // pending = sedang antri init (untuk hindari double-init)
+  pending: false,
 })
 
 const tabs = ref([createTab()])
 const activeTabId = ref(tabs.value[0].id)
 const activeTab = () => tabs.value.find(t => t.id === activeTabId.value)
 
-const setRef = (el, tab) => { if (el) tab.el = el }
+// setRef dipanggil Vue setiap render — update el dan trigger init jika perlu
+const setRef = (el, tab) => {
+  if (!el) return
+  tab.el = el
+  // Jika tab ini aktif dan belum init, jadwalkan init
+  if (!tab.initialized && !tab.pending && activeTabId.value === tab.id) {
+    scheduleInit(tab)
+  }
+}
+
+// ── scheduleInit: defer init agar DOM pasti sudah visible ──
+const scheduleInit = (tab) => {
+  if (tab.initialized || tab.pending) return
+  tab.pending = true
+  // requestAnimationFrame: pastikan browser sudah paint element ke layar
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (tab.el && !tab.initialized) {
+        initTab(tab)
+      } else {
+        tab.pending = false
+      }
+    })
+  })
+}
 
 // ── Terminal init ─────────────────────────────────────────
 const initTab = async (tab) => {
-  if (tab.initialized || !tab.el) return
+  if (tab.initialized || !tab.el) {
+    tab.pending = false
+    return
+  }
   tab.initialized = true
+  tab.pending = false
 
   tab.term = new Terminal({
     cursorBlink: true,
@@ -48,6 +80,8 @@ const initTab = async (tab) => {
     fontFamily: 'Menlo, Monaco, "Courier New", monospace',
     fontSize: 13,
     lineHeight: 1.4,
+    // Sembunyikan input saat pengguna mengetik (tidak perlu echo lokal)
+    disableStdin: false,
   })
 
   tab.fitAddon = new FitAddon()
@@ -56,7 +90,7 @@ const initTab = async (tab) => {
 
   await nextTick()
   tab.fitAddon.fit()
-  tab.term.writeln('Connecting to backend server...')
+  tab.term.writeln('\x1b[2mConnecting...\x1b[0m')
 
   try {
     const token = getToken(activeServerId.value)
@@ -71,6 +105,8 @@ const initTab = async (tab) => {
     }
 
     tab.ws.onmessage = (evt) => {
+      // Backend sudah handle semua noise (password prompt, sudo hint, dll)
+      // dan mengirim ANSI clear sebelum prompt — langsung render semua output
       if (evt.data instanceof ArrayBuffer) {
         tab.term.write(new Uint8Array(evt.data))
       } else {
@@ -80,8 +116,7 @@ const initTab = async (tab) => {
 
     tab.ws.onclose = () => {
       tab.isLoading = false
-      tab.term?.writeln('\n\r\x1b[31mConnection Closed.\x1b[0m')
-      // Cek apakah putus karena token expired
+      tab.term?.writeln('\r\n\x1b[31mConnection closed.\x1b[0m')
       const currentToken = getToken(activeServerId.value)
       if (isTokenExpired(currentToken, 0)) {
         window.dispatchEvent(new CustomEvent('auth:expired', {
@@ -91,6 +126,7 @@ const initTab = async (tab) => {
     }
 
     tab.ws.onerror = () => {
+      clearTimeout(readyTimeout)
       tab.isLoading = false
       const currentToken = getToken(activeServerId.value)
       if (isTokenExpired(currentToken, 0)) {
@@ -101,15 +137,17 @@ const initTab = async (tab) => {
       } else {
         tab.connectionError = 'WebSocket connection failed. Ensure backend is running.'
       }
-      tab.term?.writeln('\n\r\x1b[31mConnection Error.\x1b[0m')
+      tab.term?.writeln('\r\n\x1b[31mConnection error.\x1b[0m')
     }
 
     tab.term.onData((data) => {
       if (tab.ws?.readyState === WebSocket.OPEN) tab.ws.send(data)
     })
+
   } catch (err) {
     tab.isLoading = false
     tab.connectionError = err.message
+    tab.initialized = false // allow retry
   }
 }
 
@@ -117,6 +155,7 @@ const destroyTab = (tab) => {
   if (tab.ws) { const s = tab.ws; tab.ws = null; s.close() }
   if (tab.term) { tab.term.dispose(); tab.term = null }
   tab.initialized = false
+  tab.pending = false
   tab.el = null
 }
 
@@ -125,8 +164,8 @@ const addTab = async () => {
   const tab = createTab()
   tabs.value.push(tab)
   activeTabId.value = tab.id
+  // nextTick menunggu Vue render, lalu scheduleInit akan dipanggil via setRef
   await nextTick()
-  setTimeout(() => initTab(tab), 200)
 }
 
 const closeTab = (tabId) => {
@@ -144,27 +183,43 @@ const switchTab = async (tabId) => {
   const tab = activeTab()
   if (!tab) return
   if (!tab.initialized) {
-    setTimeout(() => initTab(tab), 150)
+    // Element sudah ada di DOM (visible), langsung jadwalkan init
+    if (tab.el) {
+      scheduleInit(tab)
+    }
+    // Jika el belum ada, setRef akan trigger scheduleInit saat element mount
   } else {
-    tab.fitAddon?.fit()
-    tab.term?.focus()
+    // Sudah init — fit ulang karena ukuran mungkin berubah saat invisible
+    requestAnimationFrame(() => {
+      tab.fitAddon?.fit()
+      tab.term?.focus()
+    })
   }
 }
 
-// ── Watch visible prop — init saat modal dibuka ───────────
+// ── Watch visible prop ────────────────────────────────────
 watch(() => props.visible, async (val) => {
   if (val) {
     await nextTick()
-    setTimeout(() => {
-      const tab = activeTab()
-      if (tab && !tab.initialized) initTab(tab)
-      else { tab?.fitAddon?.fit(); tab?.term?.focus() }
-    }, 150)
+    const tab = activeTab()
+    if (!tab) return
+    if (!tab.initialized) {
+      if (tab.el) scheduleInit(tab)
+      // else: setRef akan handle saat DOM mount
+    } else {
+      requestAnimationFrame(() => {
+        tab.fitAddon?.fit()
+        tab.term?.focus()
+      })
+    }
   }
 })
 
+// ── Resize handler ────────────────────────────────────────
 const handleResize = () => {
-  if (props.visible) activeTab()?.fitAddon?.fit()
+  if (props.visible) {
+    requestAnimationFrame(() => activeTab()?.fitAddon?.fit())
+  }
 }
 
 onMounted(() => {
@@ -178,7 +233,6 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- Modal Overlay — hanya tampil jika visible prop true -->
   <Teleport to="body">
     <div
       v-if="visible"
@@ -231,21 +285,22 @@ onUnmounted(() => {
         </div>
 
         <!-- Terminal Panels -->
+        <!-- Gunakan v-show bukan invisible agar xterm bisa measure DOM size dengan benar -->
         <div class="relative flex-1 overflow-hidden bg-slate-900">
           <div
             v-for="tab in tabs"
             :key="tab.id"
+            v-show="activeTabId === tab.id"
             class="absolute inset-0 p-2"
-            :class="activeTabId === tab.id ? '' : 'invisible pointer-events-none'"
           >
-            <!-- Loading -->
+            <!-- Loading overlay -->
             <div v-if="tab.isLoading && !tab.connectionError"
               class="absolute inset-0 flex flex-col items-center justify-center text-slate-400 z-10 bg-slate-900">
               <Loader2 class="w-8 h-8 animate-spin mb-3 text-blue-500" />
               <p class="text-sm">Initiating PTY Session...</p>
             </div>
 
-            <!-- Error -->
+            <!-- Error overlay -->
             <div v-if="tab.connectionError"
               class="absolute inset-0 flex flex-col items-center justify-center z-10 bg-slate-900/90 p-6 text-center">
               <div class="bg-red-500/10 border border-red-500/50 rounded-lg p-5 max-w-md">
@@ -255,7 +310,7 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- xterm container -->
+            <!-- xterm mount point — selalu ada di DOM agar setRef bisa set el -->
             <div :ref="el => setRef(el, tab)" class="w-full h-full" />
           </div>
         </div>

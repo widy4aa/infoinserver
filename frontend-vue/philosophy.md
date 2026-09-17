@@ -337,10 +337,7 @@ These elements are already distinctive and should be kept, potentially enhanced:
 
 **All UI strings must be in English.** No exceptions.
 
-Indonesian strings found in the codebase that must be updated:
-- `UsersView`: "Konfirmasi", "Hapus User", "Apakah Anda yakin...", "Shell/Binary"
-- `LogsView`: "Log ini dicatat secara otomatis oleh background scheduler..."
-- Any other `confirm()` / `alert()` / `prompt()` message text
+Note: Some backend-generated strings (e.g., from `vm.rs` WebSocket stream) may still contain Indonesian text — those are server-side and outside the scope of this document.
 
 ---
 
@@ -352,7 +349,7 @@ When applying this philosophy to existing views, follow this sequence:
 2. **Shell second** — `App.vue` and `ServerLayout.vue` set the frame for everything
 3. **Most-used views** — Login, Home, Dashboard see the most traffic
 4. **Feature views** — Services, Files, Containers, Users, Ports, etc.
-5. **Utility views** — Updates, Syslogs, Cron, Cloudflare, Logs, Settings last
+5. **Utility views** — Updates, Syslogs, Cron, Cloudflare, Settings last
 
 Each view change is self-contained. A view should not depend on another view being updated first.
 

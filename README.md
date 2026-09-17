@@ -17,6 +17,13 @@ No agents. No telemetry. No cloud dependency. Just your server, talking to you.
 - **Historical Charts** — Data recorded every 5 minutes to SQLite, displayed as interactive charts with time range filters
 - **System Info** — Hostname, OS name with distro icon, kernel version, uptime, logged-in user
 
+### Home Dashboard
+- **Server Ping Indicators** — Each server card shows live latency (online/offline) with sonar pulse animation
+- **Edit Mode** — Pencil button toggles edit mode with fluid jiggle animation; delete servers with X button
+- **Server Labels / Groups** — Organize servers into labeled groups, drag & drop cards across labels
+- **Add Server Modal** — Add a new server directly from the home screen without navigating away
+    - **Cross-browser Config Sync** — Server list, labels, and order stored in shared global config (Bun SQLite). Admin and Master roles can write; Slave roles are read-only
+
 ### System Administration
 - **Systemd Services** — List, start, stop, restart, enable, and disable background daemons
 - **Process Manager** — Top process list (sorted by CPU/RAM), search by name or PID, force-kill
@@ -43,7 +50,7 @@ No agents. No telemetry. No cloud dependency. Just your server, talking to you.
 - **Port Scanner** — On-demand async scan via `nmap` with dangerous port highlighting
 - **UFW Firewall** — View status, toggle on/off, manage allow/deny rules
 - **Internet Speedtest** — On-demand speed test with 5-result history
-- **Ping Indicator** — Live latency to backend server, shown in the navbar
+- **Ping Indicator** — Live latency to backend server, shown in the sidebar
 
 ### Intrusion Prevention (Fail2Ban)
 - **Status Dashboard** — Active jails, banned IP count per jail
@@ -56,6 +63,7 @@ No agents. No telemetry. No cloud dependency. Just your server, talking to you.
 - **Multi-runtime Support** — Automatically detects Docker or Podman
 - **Container Management** — List, start, stop, remove containers; view logs and inspect details
 - **Compose** — Deploy new projects via YAML editor, manage per-service, edit YAML inline
+- **VM Management** — Deploy lightweight virtual machines (Ubuntu 24.04, Arch) as Podman containers with systemd as PID 1; managed via a WebSocket deployment wizard
 
 ### Cloudflare Tunnel
 - **Setup Wizard** — Step-by-step: Install → Authorize → Create Tunnel
@@ -68,10 +76,11 @@ No agents. No telemetry. No cloud dependency. Just your server, talking to you.
 - **Dashboard Audit Log** — Every admin action logged to SQLite (INFO / WARNING / CRITICAL)
 - **Bash History Viewer** — Read `.bash_history` for the active user and root
 
-### Authentication
-- **GitHub OAuth** — Login via GitHub account (primary authentication)
+### Authentication & Access Control
+- **GitHub OAuth** — Login via GitHub account, handled by Bun server (not Rust)
 - **Linux PAM** — Per-server authentication using real OS credentials (sudo/wheel group required)
 - **Multi-user Sessions** — Hold tokens for multiple OS users per server, switch without re-entering passwords
+- **Role-Based Access Control** — Three built-in roles (`admin`, `master`, `slave`) plus custom roles with configurable group access. Admin/Master can modify the server list; Slave is read-only
 
 ### Developer Tools
 - **Multi-session Terminal** — Native PTY shell via WebSocket (`xterm.js`), each browser tab gets its own shell
@@ -82,38 +91,47 @@ No agents. No telemetry. No cloud dependency. Just your server, talking to you.
 ## Architecture
 
 ```
-┌─────────────────────────────────┐
-│   Browser (Vue 3 SPA)           │
-│   http://host:3000              │
-│   HTTP REST + 4 WebSocket       │
-│   JWT token per server          │
-└────────────────┬────────────────┘
-                 │ REST API / WebSocket
+┌─────────────────────────────────────┐
+│  Browser (Vue 3 SPA)                │
+│  http://host:3000                   │
+│  HTTP REST + WebSocket              │
+└────────────────┬────────────────────┘
+                 │ HTTP / WebSocket
                  ▼
-┌─────────────────────────────────┐
-│   Backend — Rust (Axum + Tokio) │
-│   http://host:8080              │
-│   PAM Auth · GitHub OAuth       │
-│   sudo -S injection             │
-│   SQLite (SQLx async)           │
-│   Background scheduler          │
-└────────────────┬────────────────┘
+┌─────────────────────────────────────┐
+│  Bun + Hono (port 3000)             │
+│  - GitHub OAuth handler             │
+│  - Frontend config sync (SQLite)    │
+│  - HTTP proxy → Rust                │
+│  - WebSocket proxy → Rust (native)  │
+│  - Serve Vue static files           │
+└────────────────┬────────────────────┘
+                 │ HTTP / WebSocket
+                 ▼
+┌─────────────────────────────────────┐
+│  Rust — Axum 0.8 + Tokio (port 8080)│
+│  PAM Auth · sudo -S injection       │
+│  SQLite (SQLx async)                │
+│  Background scheduler               │
+└────────────────┬────────────────────┘
                  │
                  ▼
-┌─────────────────────────────────┐
-│   Linux Kernel                  │
-│   /proc · /sys · /dev · lsblk   │
-│   systemctl · apt · journalctl  │
-└─────────────────────────────────┘
+┌─────────────────────────────────────┐
+│  Linux Kernel                       │
+│  /proc · /sys · /dev · lsblk        │
+│  systemctl · apt · journalctl       │
+└─────────────────────────────────────┘
 ```
 
-**Backend** — Rust (Axum 0.8, Tokio). Fully decoupled from frontend. Reads metrics directly from the kernel, executes OS commands via `sudo`, and streams data to the browser over WebSocket. Does **not** serve the frontend.
+**Bun + Hono server** (`frontend-vue/server.ts`) — The middle layer between browser and Rust. Handles GitHub OAuth (secret never exposed to browser), enforces role-based access control (RBAC) for the global config, proxies all `/api/*` HTTP requests to Rust, and proxies WebSocket connections bidirectionally using Bun's native `websocket` handler. Also persists frontend configuration (server list, labels, order) to a local SQLite database (`frontend.db`) as a **single shared global config** — readable by all authenticated users, writable only by `admin` and `master` roles.
 
-**Frontend** — Vue 3 + Vite + Tailwind CSS v4. Runs independently on port 3000. Communicates with the backend via REST API and 4 WebSocket channels. In development, Vite proxies `/api/*` requests to the backend.
+**Rust backend** (`src/`) — Axum 0.8 + Tokio. Reads metrics directly from the kernel, executes OS commands via `sudo`, streams data over WebSocket. Does **not** handle GitHub OAuth (moved to Bun). Does **not** serve the frontend.
+
+**Frontend** — Vue 3 + Vite + Tailwind CSS v4. Built to `static/` directory, served by Bun in production. In development, Bun proxies non-API requests to Vite dev server (port 5173).
 
 **Authentication** — Two-layer:
-1. **GitHub OAuth** — Identity verification for dashboard access
-2. **Linux PAM** — Per-server credential verification. Only users in `sudo` or `wheel` group are allowed. Root login is blocked.
+1. **GitHub OAuth** — Identity verification, handled entirely by Bun server. RBAC roles (`admin`/`master`/`slave`/custom) assigned per GitHub user.
+2. **Linux PAM** — Per-server credential verification via Rust. Only users in `sudo` or `wheel` group are allowed. Root login is blocked.
 
 ---
 
@@ -122,83 +140,148 @@ No agents. No telemetry. No cloud dependency. Just your server, talking to you.
 ### Prerequisites
 
 ```bash
+# Rust backend dependencies
 # Debian/Ubuntu
 sudo apt install build-essential pkg-config libclang-dev libpam0g-dev
 
 # Arch Linux
 sudo pacman -S base-devel clang pam
+
+# Bun (for frontend server)
+curl -fsSL https://bun.sh/install | bash
 ```
 
-### 1. Configure Environment
+### 1. Configure Rust Backend
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and set the required values:
+Edit `.env`:
 
 ```env
 PORT=8080
 JWT_SECRET=your-strong-random-secret
-
-# GitHub OAuth (create app at https://github.com/settings/developers)
-GITHUB_CLIENT_ID=your-client-id
-GITHUB_CLIENT_SECRET=your-client-secret
-GITHUB_REDIRECT_URI=http://YOUR_IP:8080/api/auth/github/callback
-
-# Frontend URL (for OAuth redirect after login)
-FRONTEND_URL=http://YOUR_IP:3000
-
-# CORS — allow frontend origin to access backend API
 CORS_ORIGIN=http://YOUR_IP:3000
 ```
 
-### 2. Start the Backend
+### 2. Configure Bun Server
 
 ```bash
-chmod +x start.sh && ./start.sh
-# Backend running at http://YOUR_IP:8080
+cp frontend-vue/.env.example frontend-vue/.env
 ```
 
-### 3. Start the Frontend
+Edit `frontend-vue/.env`:
 
-**Development (recommended):**
+```env
+FRONTEND_PORT=3000
+RUST_BACKEND_URL=http://YOUR_IP:8080
+FRONTEND_URL=http://YOUR_IP:3000
+
+# GitHub OAuth App (create at https://github.com/settings/developers)
+# Authorization callback URL must be: http://YOUR_IP:3000/api/auth/github/callback
+GITHUB_CLIENT_ID=your-client-id
+GITHUB_CLIENT_SECRET=your-client-secret
+GITHUB_REDIRECT_URI=http://YOUR_IP:3000/api/auth/github/callback
+GITHUB_SESSION_SECRET=your-random-session-secret
+
+# Must be identical to JWT_SECRET in root .env
+JWT_SECRET=your-strong-random-secret
+```
+
+### 3. Start Backend
+
 ```bash
-cd frontend-vue
-npm install
-npm run dev
-# Frontend at http://YOUR_IP:3000
-# /api/* requests proxied to :8080 automatically
+chmod +x start.sh && ./start.sh --backend
+# Rust backend running at http://YOUR_IP:8080
 ```
 
-**Production (Docker/Podman):**
+### 4. Start Frontend
+
 ```bash
-podman compose up -d --build
-# Frontend served via Nginx at http://YOUR_IP:3000
+# Production (serves built static files)
+./start.sh --frontend
+
+# Development (Vite HMR + Bun proxy — auto-reload on file changes)
+./start.sh --frontend --dev
+
+# Start both backend + frontend at once
+./start.sh
 ```
 
-### 4. Open the Dashboard
+### 5. Open the Dashboard
 
 1. Go to `http://YOUR_IP:3000`
 2. Click **Sign in with GitHub**
-3. After OAuth, you'll see the server dashboard
+3. After OAuth, you'll see the home screen
 4. Click **Add Server** → enter backend URL → login with a Linux sudo user
 
 ---
 
+## Script Usage
+
+```bash
+# Start
+./start.sh                   # backend + frontend (production)
+./start.sh --backend         # Rust only
+./start.sh --frontend        # Bun server only (production)
+./start.sh --frontend --dev  # Bun + Vite dev mode (HMR)
+./start.sh --dev             # backend + frontend dev mode
+
+# Stop
+./stop.sh                    # stop all
+./stop.sh --backend          # stop Rust only
+./stop.sh --frontend         # stop Bun + Vite (if running)
+```
+
+**Log files:**
+
+| Process | Log file |
+|---|---|
+| Rust backend | `server.log` |
+| Bun server | `frontend.log` |
+| Vite dev server | `vite.log` |
+
+---
+
 ## Environment Variables
+
+### Rust Backend (`.env`)
 
 | Variable | Default | Required | Description |
 |---|---|---|---|
 | `PORT` | `8080` | No | Backend HTTP port |
 | `FILE_ROOT` | `$HOME` | No | Root path for file write operations |
 | `DB_PATH` | `sqlite:./data.db` | No | SQLite database path |
-| `JWT_SECRET` | *(insecure fallback)* | **Yes** | JWT signing secret — use a strong random value |
+| `JWT_SECRET` | *(insecure fallback)* | **Yes** | JWT signing secret — must match Bun server |
+| `CORS_ORIGIN` | `http://localhost:3000` | **Yes** | Allowed CORS origin (Bun server URL) |
+
+### Bun Server (`frontend-vue/.env`)
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `FRONTEND_PORT` | `3000` | No | Bun server port |
+| `RUST_BACKEND_URL` | `http://localhost:8080` | **Yes** | URL of Rust backend (internal) |
+| `FRONTEND_URL` | `http://localhost:3000` | **Yes** | Public URL of this Bun server |
+| `JWT_SECRET` | *(insecure fallback)* | **Yes** | Must be **identical** to Rust backend `JWT_SECRET` |
 | `GITHUB_CLIENT_ID` | — | **Yes** | GitHub OAuth App client ID |
 | `GITHUB_CLIENT_SECRET` | — | **Yes** | GitHub OAuth App client secret |
-| `GITHUB_REDIRECT_URI` | — | **Yes** | Must match the callback URL in your GitHub OAuth App |
-| `FRONTEND_URL` | `http://localhost:3000` | **Yes** | Frontend URL — used for OAuth redirect after login |
-| `CORS_ORIGIN` | `http://localhost:3000` | **Yes** | Allowed CORS origin for frontend requests |
+| `GITHUB_REDIRECT_URI` | — | **Yes** | Must match callback URL in GitHub OAuth App settings |
+| `GITHUB_SESSION_SECRET` | *(insecure fallback)* | **Yes** | Secret for signing GitHub session tokens |
+| `FRONTEND_DB_PATH` | `./frontend.db` | No | SQLite path for frontend config storage |
+| `NODE_ENV` | — | No | Set to `production` to serve static files; omit for dev mode |
+| `VITE_DEV_URL` | `http://localhost:5173` | No | Vite dev server URL (dev mode only, commented out in `.env.example` by default) |
+| `DEFAULT_ADMIN` | `widy4aa` | **Yes** | GitHub username whose config row is used as the shared global config. Set to your own GitHub username. |
+
+---
+
+## Production (Docker/Podman)
+
+```bash
+podman compose up -d --build
+# Bun server at http://YOUR_IP:3000
+# Rust backend must be running separately
+```
 
 ---
 

@@ -8,16 +8,17 @@ import {
   Box, Play, Square, RefreshCw, Trash2, FileText, Plus,
   Layers, Settings2, Terminal, ChevronDown, ChevronRight,
   AlertCircle, CheckCircle2, Loader2, ExternalLink, Upload,
-  RotateCcw, Scaling, Eye, Pencil, X, Save, ZoomIn
+  RotateCcw, Scaling, Eye, Pencil, X, Save, ZoomIn,
+  Server, HardDrive, Link, Cpu
 } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
-const { getActiveServerUrl } = useServerStore()
+const { getActiveServerUrl, addServer, servers, getToken, activeServerId } = useServerStore()
 const { showConfirm, showToast } = useToastStore()
 const { isDark } = useThemeStore()
 
 // ── Active Tab ─────────────────────────────────────────────────────
-const activeTab = ref('containers') // 'containers' | 'compose' | 'deploy'
+const activeTab = ref('containers') // 'containers' | 'compose' | 'deploy' | 'vms'
 
 // ── Runtime ────────────────────────────────────────────────────────
 const runtime = ref(null)
@@ -62,6 +63,25 @@ const cpYaml = ref(`services:
     restart: unless-stopped
 `)
 const isDeployingCompose = ref(false)
+
+// ── VM (systemd-nspawn) State ────────────────────────────────────────────────
+const vms = ref([])
+const isLoadingVms = ref(false)
+const vmForm = ref({
+  name: '',
+  distro: 'ubuntu-2404',
+  username: '',
+  password: '',
+  backend_port: 8081,
+  host_ip: '',
+})
+const vmDeployModal = ref({
+  open: false,
+  logs: [],
+  status: 'idle',  // 'idle' | 'running' | 'done' | 'error'
+  result: null,
+})
+let vmWs = null
 
 let pollInterval = null
 
@@ -372,6 +392,179 @@ const toggleProject = (name) => {
   expandedProjects.value = new Set(expandedProjects.value)
 }
 
+// ── VM functions ───────────────────────────────────────────────────
+
+const distroLabel = (distro) => {
+  const map = { 'ubuntu-2404': 'Ubuntu 24.04 LTS', 'arch': 'Arch Linux' }
+  return map[distro] || distro
+}
+
+const distroColor = (distro) => {
+  if (distro === 'ubuntu-2404') return isDark.value ? 'bg-orange-900/40 text-orange-300 border-orange-700' : 'bg-orange-100 text-orange-700 border-orange-200'
+  if (distro === 'arch')        return isDark.value ? 'bg-blue-900/40 text-blue-300 border-blue-700'       : 'bg-blue-100 text-blue-700 border-blue-200'
+  return isDark.value ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'
+}
+
+const vmStateColor = (state) => {
+  if (state === 'running') return isDark.value ? 'text-green-300 bg-green-900/30' : 'text-green-700 bg-green-100'
+  return isDark.value ? 'text-slate-400 bg-slate-700' : 'text-slate-600 bg-slate-100'
+}
+
+const fetchVms = async () => {
+  isLoadingVms.value = true
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/vm/list`)
+    if (res.ok) {
+      const data = await res.json()
+      vms.value = data.vms || []
+    }
+  } catch (e) {}
+  finally { isLoadingVms.value = false }
+}
+
+const vmAction = async (action, name) => {
+  try {
+    const res = await apiFetch(`${getActiveServerUrl()}/api/vm/${name}/${action}`, { method: 'POST' })
+    const data = await res.json()
+    if (res.ok) {
+      showToast('Success', data.message, 'success')
+      await fetchVms()
+    } else {
+      showToast('Error', data.message || data, 'error')
+    }
+  } catch (e) {
+    showToast('Error', e.message, 'error')
+  }
+}
+
+const deleteVm = (name) => {
+  showConfirm(
+    'Delete VM',
+    `Delete VM "${name}"? This will remove the entire OS container and its data.`,
+    async () => {
+      try {
+        const res = await apiFetch(`${getActiveServerUrl()}/api/vm/${name}`, { method: 'DELETE' })
+        const data = await res.json()
+        if (res.ok) {
+          showToast('Success', data.message, 'success')
+          await fetchVms()
+        } else {
+          showToast('Error', data.message || data, 'error')
+        }
+      } catch (e) {
+        showToast('Error', e.message, 'error')
+      }
+    }
+  )
+}
+
+const addVmToDashboard = (vm) => {
+  const url = `http://${vm.host_ip}:${vm.backend_port}`
+  const alreadyExists = servers.value.some(s => s.url === url)
+  if (alreadyExists) {
+    showToast('Info', `Server ${url} already in dashboard.`, 'info')
+    return
+  }
+  const id = 'vm-' + vm.id.slice(0, 8)
+  addServer(`VM: ${vm.name} (${distroLabel(vm.distro)})`, url, id)
+  showToast('Success', `VM '${vm.name}' added to dashboard!`, 'success')
+}
+
+// Suggest next free port
+const suggestNextPort = () => {
+  const usedPorts = vms.value.map(v => v.backend_port)
+  let port = 8081
+  while (usedPorts.includes(port)) port++
+  vmForm.value.backend_port = port
+}
+
+// Get host IP from server URL
+const inferHostIp = () => {
+  try {
+    const url = new URL(getActiveServerUrl())
+    vmForm.value.host_ip = url.hostname
+  } catch { vmForm.value.host_ip = '127.0.0.1' }
+}
+
+const openVmDeploy = () => {
+  suggestNextPort()
+  inferHostIp()
+  vmDeployModal.value = { open: true, logs: [], status: 'idle', result: null }
+}
+
+const closeVmDeploy = () => {
+  if (vmWs) { vmWs.close(); vmWs = null }
+  vmDeployModal.value.open = false
+}
+
+const deployVm = () => {
+  const { name, distro, username, password, backend_port, host_ip } = vmForm.value
+  if (!name || !username || !password || !backend_port || !host_ip) {
+    showToast('Warning', 'All fields are required.', 'warning')
+    return
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+    showToast('Warning', 'VM name: only letters, numbers, dashes, underscores.', 'warning')
+    return
+  }
+
+  vmDeployModal.value.logs = []
+  vmDeployModal.value.status = 'running'
+  vmDeployModal.value.result = null
+
+  // Build WebSocket URL — go through the Bun proxy which handles /api/* prefix
+  const serverUrl = getActiveServerUrl()
+  const wsBase = serverUrl.replace(/^http/, 'ws')
+  const params = new URLSearchParams({
+    name, distro, username, password,
+    backend_port: String(backend_port),
+    host_ip,
+  })
+  const wsUrl = `${wsBase}/api/vm/create/ws?${params}&token=${getToken(activeServerId.value) || ''}`
+
+  if (vmWs) vmWs.close()
+  vmWs = new WebSocket(wsUrl)
+
+  vmWs.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data)
+      if (msg.event === 'done') {
+        vmDeployModal.value.status = 'done'
+        vmDeployModal.value.logs.push({ event: 'done', msg: msg.msg })
+        fetchVms()
+      } else if (msg.event === 'error') {
+        vmDeployModal.value.status = 'error'
+        vmDeployModal.value.logs.push({ event: 'error', msg: msg.msg })
+      } else if (msg.event === 'info') {
+        try { vmDeployModal.value.result = JSON.parse(msg.msg) } catch {}
+      } else {
+        vmDeployModal.value.logs.push({ event: msg.event, msg: msg.msg })
+      }
+    } catch {
+      vmDeployModal.value.logs.push({ event: 'log', msg: evt.data })
+    }
+    // Auto-scroll terminal
+    setTimeout(() => {
+      const el = document.getElementById('vm-deploy-log')
+      if (el) el.scrollTop = el.scrollHeight
+    }, 30)
+  }
+
+  vmWs.onerror = () => {
+    vmDeployModal.value.status = 'error'
+    vmDeployModal.value.logs.push({ event: 'error', msg: 'WebSocket connection failed.' })
+  }
+
+  vmWs.onclose = () => {
+    if (vmDeployModal.value.status === 'running') {
+      vmDeployModal.value.status = 'error'
+      vmDeployModal.value.logs.push({ event: 'error', msg: 'Connection closed unexpectedly.' })
+    }
+  }
+}
+
+// Get active token for WS auth — diambil dari serverStore yang sudah diimport di atas
+
 const stateColor = (state) => {
   if (state === 'running') return isDark.value ? 'text-green-300 bg-green-900/30' : 'text-green-700 bg-green-100'
   if (state === 'exited' || state === 'stopped') return isDark.value ? 'text-slate-400 bg-slate-800' : 'text-slate-600 bg-slate-100'
@@ -387,14 +580,18 @@ const projectStatusColor = (status) => {
 
 onMounted(async () => {
   await fetchRuntime()
-  await Promise.all([fetchContainers(), fetchCompose()])
+  await Promise.all([fetchContainers(), fetchCompose(), fetchVms()])
   pollInterval = setInterval(async () => {
     await fetchContainers()
     if (activeTab.value === 'compose') await fetchCompose()
+    if (activeTab.value === 'vms') await fetchVms()
   }, 6000)
 })
 
-onUnmounted(() => clearInterval(pollInterval))
+onUnmounted(() => {
+  clearInterval(pollInterval)
+  if (vmWs) { vmWs.close(); vmWs = null }
+})
 </script>
 
 <template>
@@ -442,6 +639,7 @@ onUnmounted(() => clearInterval(pollInterval))
           { id: 'containers', label: 'Containers', icon: Box },
           { id: 'compose', label: 'Compose', icon: Layers },
           { id: 'deploy', label: 'Deploy', icon: Plus },
+          { id: 'vms', label: 'VMs', icon: Server },
         ]" :key="tab.id"
           @click="activeTab = tab.id"
           class="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors"
@@ -453,6 +651,7 @@ onUnmounted(() => clearInterval(pollInterval))
           {{ tab.label }}
           <span v-if="tab.id === 'containers' && containers.length" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{{ containers.length }}</span>
           <span v-if="tab.id === 'compose' && composeProjects.length" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{{ composeProjects.length }}</span>
+          <span v-if="tab.id === 'vms' && vms.length" class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{{ vms.length }}</span>
         </button>
       </div>
 
@@ -739,6 +938,143 @@ onUnmounted(() => clearInterval(pollInterval))
           </div>
         </div>
 
+        <!-- ── Tab: VMs (Podman nested containers) ────────────────── -->
+        <div v-else-if="activeTab === 'vms'" class="space-y-4">
+
+          <!-- Header / Deploy button -->
+          <div class="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 class="font-semibold text-sm" :class="isDark ? 'text-slate-200' : 'text-slate-700'">
+                OS Containers via Podman
+              </h3>
+              <p class="text-xs mt-0.5" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
+                Deploy Ubuntu 24.04, Debian 12, atau Arch Linux sebagai nested Podman container dengan InfoIn Server backend.
+              </p>
+            </div>
+            <div class="flex gap-2">
+              <button @click="fetchVms" class="btn-secondary text-xs">
+                <RefreshCw class="w-3.5 h-3.5" /> Refresh
+              </button>
+              <button @click="openVmDeploy" class="btn-primary text-xs" :disabled="!runtime?.available">
+                <Plus class="w-3.5 h-3.5" /> Deploy New VM
+              </button>
+            </div>
+          </div>
+
+          <!-- No runtime warning -->
+          <div v-if="!runtime?.available" class="rounded-lg border p-3 text-xs flex items-center gap-2"
+            :class="isDark ? 'border-red-800 bg-red-900/20 text-red-400' : 'border-red-200 bg-red-50 text-red-600'">
+            <AlertCircle class="w-4 h-4 flex-shrink-0" />
+            Podman tidak terdeteksi di server ini. Fitur VM membutuhkan Podman.
+          </div>
+
+          <!-- Loading -->
+          <div v-if="isLoadingVms && vms.length === 0" class="flex justify-center py-12">
+            <Loader2 class="w-6 h-6 animate-spin text-brand-500" />
+          </div>
+
+          <!-- Empty state -->
+          <div v-else-if="vms.length === 0" class="text-center py-12 border-2 border-dashed rounded-xl"
+            :class="isDark ? 'border-slate-700 text-slate-500' : 'border-slate-200 text-slate-400'">
+            <Server class="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p class="font-medium text-sm">Belum ada VM yang di-deploy</p>
+            <p class="text-xs mt-1 opacity-70">Klik "Deploy New VM" untuk membuat container Ubuntu, Debian, atau Arch.</p>
+          </div>
+
+          <!-- VM grid -->
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div v-for="vm in vms" :key="vm.id"
+              class="border rounded-xl overflow-hidden transition-shadow hover:shadow-md"
+              :class="isDark ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200'">
+
+              <!-- Card header -->
+              <div class="px-4 pt-4 pb-3 flex items-start justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <div class="p-2 rounded-lg flex-shrink-0"
+                    :class="isDark ? 'bg-slate-700' : 'bg-slate-100'">
+                    <HardDrive class="w-4 h-4" :class="isDark ? 'text-slate-300' : 'text-slate-600'" />
+                  </div>
+                  <div class="min-w-0">
+                    <p class="font-semibold truncate text-sm" :class="isDark ? 'text-slate-100' : 'text-slate-800'">{{ vm.name }}</p>
+                    <span class="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded border mt-0.5" :class="distroColor(vm.distro)">
+                      {{ distroLabel(vm.distro) }}
+                    </span>
+                  </div>
+                </div>
+                <!-- State badge -->
+                <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full flex-shrink-0" :class="vmStateColor(vm.state)">
+                  <span class="relative flex h-1.5 w-1.5">
+                    <span v-if="vm.state === 'running'" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-1.5 w-1.5" :class="vm.state === 'running' ? 'bg-green-500' : 'bg-slate-400'"></span>
+                  </span>
+                  {{ vm.state || 'exited' }}
+                </span>
+              </div>
+
+              <!-- Card info -->
+              <div class="px-4 pb-3 space-y-1.5">
+                <div class="flex items-center gap-1.5 text-xs" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
+                  <Cpu class="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>User: <strong class="font-medium" :class="isDark ? 'text-slate-200' : 'text-slate-700'">{{ vm.username }}</strong></span>
+                </div>
+                <div class="flex items-center gap-1.5 text-xs" :class="isDark ? 'text-slate-400' : 'text-slate-500'">
+                  <Link class="w-3.5 h-3.5 flex-shrink-0" />
+                  <span class="font-mono truncate">{{ vm.host_ip }}:<strong>{{ vm.backend_port }}</strong></span>
+                </div>
+                <div v-if="vm.container_id" class="flex items-center gap-1.5 text-xs" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
+                  <Box class="w-3.5 h-3.5 flex-shrink-0" />
+                  <span class="font-mono truncate" :title="vm.container_id">{{ vm.container_id }}</span>
+                </div>
+                <div class="text-[10px]" :class="isDark ? 'text-slate-600' : 'text-slate-400'">
+                  Created: {{ new Date(vm.created_at).toLocaleDateString() }}
+                </div>
+              </div>
+
+              <!-- Card actions -->
+              <div class="px-4 pb-4 flex items-center gap-1.5 flex-wrap border-t pt-3"
+                :class="isDark ? 'border-slate-700' : 'border-slate-100'">
+                <button @click="vmAction('start', vm.name)" :disabled="vm.state === 'running'"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold
+                         bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/40 dark:text-green-300 dark:hover:bg-green-900/70
+                         disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  <Play class="w-3 h-3" /> Start
+                </button>
+                <button @click="vmAction('stop', vm.name)" :disabled="vm.state !== 'running'"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold
+                         bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/70
+                         disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  <Square class="w-3 h-3" /> Stop
+                </button>
+                <button @click="addVmToDashboard(vm)"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold
+                         bg-indigo-500 text-white hover:bg-indigo-600 dark:bg-indigo-600 dark:hover:bg-indigo-500
+                         shadow-sm transition-colors" title="Add backend to Dashboard">
+                  <ExternalLink class="w-3 h-3" /> Add to Dashboard
+                </button>
+                <button @click="deleteVm(vm.name)"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold ml-auto
+                         bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/70
+                         transition-colors">
+                  <Trash2 class="w-3 h-3" /> Delete
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Requirements note -->
+          <div class="rounded-lg border p-3 text-xs space-y-1"
+            :class="isDark ? 'border-slate-700 bg-slate-800/30 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'">
+            <p class="font-semibold" :class="isDark ? 'text-slate-300' : 'text-slate-600'">Cara kerja</p>
+            <ul class="list-disc list-inside space-y-0.5">
+              <li>Setiap VM adalah <strong>Podman container</strong> yang menjalankan distro Linux lengkap</li>
+              <li>Binary InfoIn Server di-bind-mount dari host → container (tidak perlu build ulang)</li>
+              <li>Port backend di-forward dari container ke host via <code class="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">-p PORT:8080</code></li>
+              <li>Debian 12 menggunakan <code class="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">ubuntu:24.04</code> base (kompatibilitas GLIBC)</li>
+              <li>Data VM disimpan di Podman named volume (<code class="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">infoinserver-vm-&lt;name&gt;</code>)</li>
+            </ul>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -822,6 +1158,185 @@ onUnmounted(() => clearInterval(pollInterval))
           <div class="flex gap-2 justify-end">
             <button @click="scaleModal.open = false" class="btn-secondary text-sm">Cancel</button>
             <button @click="doScale" class="btn-primary text-sm"><Scaling class="w-4 h-4" /> Scale</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ── VM Deploy Modal ────────────────────────────────────────── -->
+    <Teleport to="body">
+      <div v-if="vmDeployModal.open" class="fixed inset-0 z-50 flex items-center justify-center p-4"
+        :class="isDark ? 'bg-slate-950/80' : 'bg-black/60'"
+        @click.self="vmDeployModal.status !== 'running' && closeVmDeploy()">
+        <div class="rounded-xl w-full max-w-2xl flex flex-col max-h-[90vh]"
+          :class="isDark ? 'bg-slate-800' : 'bg-white'" style="box-shadow: var(--shadow-modal)">
+
+          <!-- Modal header -->
+          <div class="flex items-center justify-between px-5 py-4 border-b"
+            :class="isDark ? 'border-slate-700' : 'border-slate-200'">
+            <h3 class="font-semibold flex items-center gap-2" :class="isDark ? 'text-slate-100' : 'text-slate-800'">
+              <Server class="w-4 h-4 text-brand-500" />
+              Deploy New VM
+            </h3>
+            <button v-if="vmDeployModal.status !== 'running'" @click="closeVmDeploy"
+              class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400">
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+
+          <div class="flex-1 overflow-y-auto">
+            <!-- Form (idle state) -->
+            <div v-if="vmDeployModal.status === 'idle'" class="p-5 space-y-4">
+
+              <!-- Distro picker -->
+              <div>
+                <label class="text-xs font-semibold uppercase tracking-wider mb-2 block"
+                  :class="isDark ? 'text-slate-400' : 'text-slate-500'">Pilih Distro *</label>
+                <div class="grid grid-cols-2 gap-3">
+                  <button v-for="d in [
+                    { id: 'ubuntu-2404', label: 'Ubuntu 24.04', desc: 'LTS, direkomendasikan', disabled: false },
+                    { id: 'arch',        label: 'Arch Linux',   desc: 'Coming soon',           disabled: true  },
+                  ]" :key="d.id"
+                    @click="!d.disabled && (vmForm.distro = d.id)"
+                    :disabled="d.disabled"
+                    class="flex flex-col items-center gap-1 p-3 rounded-lg border text-center text-xs transition-all relative"
+                    :class="d.disabled
+                      ? (isDark ? 'border-slate-700 bg-slate-800/30 text-slate-600 cursor-not-allowed' : 'border-slate-200 bg-slate-50 text-slate-400 cursor-not-allowed')
+                      : vmForm.distro === d.id
+                        ? (isDark ? 'border-brand-500 bg-brand-900/30 text-brand-300' : 'border-brand-500 bg-brand-50 text-brand-700')
+                        : (isDark ? 'border-slate-600 text-slate-400 hover:border-slate-500' : 'border-slate-200 text-slate-500 hover:border-slate-300')">
+                    <HardDrive class="w-5 h-5" :class="d.disabled ? 'opacity-40' : ''" />
+                    <span class="font-semibold" :class="d.disabled ? 'opacity-40' : ''">{{ d.label }}</span>
+                    <span class="text-[10px]" :class="d.disabled ? 'text-amber-500 dark:text-amber-400 font-medium' : 'opacity-70'">{{ d.desc }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- VM name + host IP -->
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-wider mb-1 block"
+                    :class="isDark ? 'text-slate-400' : 'text-slate-500'">VM Name *</label>
+                  <input v-model="vmForm.name" type="text" placeholder="e.g. my-ubuntu" class="input-field" />
+                  <p class="text-[10px] mt-1" :class="isDark ? 'text-slate-600' : 'text-slate-400'">letters, numbers, dashes, underscores</p>
+                </div>
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-wider mb-1 block"
+                    :class="isDark ? 'text-slate-400' : 'text-slate-500'">Host IP *</label>
+                  <input v-model="vmForm.host_ip" type="text" placeholder="e.g. 192.168.1.10" class="input-field" />
+                  <p class="text-[10px] mt-1" :class="isDark ? 'text-slate-600' : 'text-slate-400'">used for dashboard URL</p>
+                </div>
+              </div>
+
+              <!-- User + password -->
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-wider mb-1 block"
+                    :class="isDark ? 'text-slate-400' : 'text-slate-500'">Username *</label>
+                  <input v-model="vmForm.username" type="text" placeholder="e.g. admin" class="input-field" />
+                </div>
+                <div>
+                  <label class="text-xs font-semibold uppercase tracking-wider mb-1 block"
+                    :class="isDark ? 'text-slate-400' : 'text-slate-500'">Password *</label>
+                  <input v-model="vmForm.password" type="password" placeholder="for root + user" class="input-field" />
+                </div>
+              </div>
+
+              <!-- Backend port -->
+              <div class="max-w-[200px]">
+                <label class="text-xs font-semibold uppercase tracking-wider mb-1 block"
+                  :class="isDark ? 'text-slate-400' : 'text-slate-500'">Backend Port *</label>
+                <input v-model.number="vmForm.backend_port" type="number" min="1024" max="65535" class="input-field" />
+                <p class="text-[10px] mt-1" :class="isDark ? 'text-slate-600' : 'text-slate-400'">InfoIn Server backend port (forwarded from VM)</p>
+              </div>
+
+              <!-- Info box -->
+              <div class="rounded-lg p-3 text-xs space-y-1"
+                :class="isDark ? 'bg-slate-700/50 text-slate-400' : 'bg-blue-50 text-blue-600'">
+                <p class="font-semibold">Yang akan di-deploy:</p>
+                <ul class="list-disc list-inside space-y-0.5">
+                  <li>Podman container dari image <code class="font-mono">{{ vmForm.distro === 'arch' ? 'archlinux:base' : 'ubuntu:24.04' }}</code></li>
+                  <li>User: <code class="font-mono">root</code> + <code class="font-mono">{{ vmForm.username || 'user' }}</code> (dengan sudo)</li>
+                  <li>InfoIn Server backend berjalan di port <strong>{{ vmForm.backend_port }}</strong></li>
+                  <li>Port {{ vmForm.backend_port }} di-forward dari container ke host</li>
+                  <li>Data disimpan di Podman volume <code class="font-mono">infoinserver-vm-{{ vmForm.name || 'nama' }}</code></li>
+                </ul>
+              </div>
+
+              <div class="flex justify-end gap-2 pt-1">
+                <button @click="closeVmDeploy" class="btn-secondary">Cancel</button>
+                <button @click="deployVm" class="btn-primary">
+                  <Server class="w-4 h-4" /> Start Deployment
+                </button>
+              </div>
+            </div>
+
+            <!-- Progress terminal (running/done/error) -->
+            <div v-else class="flex flex-col h-full">
+              <div class="px-5 py-3 border-b flex items-center gap-2"
+                :class="isDark ? 'border-slate-700' : 'border-slate-200'">
+                <Loader2 v-if="vmDeployModal.status === 'running'" class="w-4 h-4 animate-spin text-brand-500" />
+                <CheckCircle2 v-else-if="vmDeployModal.status === 'done'" class="w-4 h-4 text-green-500" />
+                <AlertCircle v-else class="w-4 h-4 text-red-500" />
+                <span class="text-sm font-medium" :class="isDark ? 'text-slate-200' : 'text-slate-700'">
+                  <span v-if="vmDeployModal.status === 'running'">Deploying VM — please wait...</span>
+                  <span v-else-if="vmDeployModal.status === 'done'" class="text-green-600 dark:text-green-400">VM deployed successfully!</span>
+                  <span v-else class="text-red-600 dark:text-red-400">Deployment failed</span>
+                </span>
+              </div>
+
+              <!-- Log terminal -->
+              <div id="vm-deploy-log"
+                class="flex-1 overflow-y-auto p-4 bg-slate-950 font-mono text-xs leading-relaxed space-y-0.5"
+                style="min-height: 280px; max-height: 400px">
+                <div v-for="(entry, i) in vmDeployModal.logs" :key="i"
+                  :class="{
+                    'text-green-400': entry.event === 'done',
+                    'text-red-400': entry.event === 'error',
+                    'text-amber-300 font-semibold': entry.event === 'step',
+                    'text-slate-400': entry.event === 'log',
+                    'text-blue-400': entry.event === 'info',
+                  }">
+                  <span v-if="entry.event === 'step'">▶ </span>
+                  <span v-else-if="entry.event === 'done'">✓ </span>
+                  <span v-else-if="entry.event === 'error'">✗ </span>
+                  <span v-else class="opacity-50">  </span>
+                  {{ entry.msg }}
+                </div>
+                <div v-if="vmDeployModal.status === 'running'" class="text-slate-600 animate-pulse">█</div>
+              </div>
+
+              <!-- Success result -->
+              <div v-if="vmDeployModal.status === 'done' && vmDeployModal.result"
+                class="px-5 py-4 border-t space-y-3"
+                :class="isDark ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-green-50'">
+                <p class="text-sm font-semibold" :class="isDark ? 'text-green-400' : 'text-green-700'">VM Ready</p>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                  <div :class="isDark ? 'text-slate-400' : 'text-slate-500'">VM Name</div>
+                  <div class="font-medium font-mono" :class="isDark ? 'text-slate-200' : 'text-slate-700'">{{ vmDeployModal.result.name }}</div>
+                  <div :class="isDark ? 'text-slate-400' : 'text-slate-500'">Distro</div>
+                  <div class="font-medium" :class="isDark ? 'text-slate-200' : 'text-slate-700'">{{ distroLabel(vmDeployModal.result.distro) }}</div>
+                  <div :class="isDark ? 'text-slate-400' : 'text-slate-500'">Backend URL</div>
+                  <div class="font-mono font-medium" :class="isDark ? 'text-brand-300' : 'text-brand-600'">{{ vmDeployModal.result.dashboard_url }}</div>
+                </div>
+                <div class="flex gap-2 pt-1">
+                  <button @click="addVmToDashboard(vmDeployModal.result); closeVmDeploy()" class="btn-primary text-sm">
+                    <ExternalLink class="w-3.5 h-3.5" /> Add to Dashboard
+                  </button>
+                  <button @click="closeVmDeploy" class="btn-secondary text-sm">Close</button>
+                </div>
+              </div>
+
+              <!-- Error actions -->
+              <div v-else-if="vmDeployModal.status === 'error'"
+                class="px-5 py-4 border-t flex gap-2"
+                :class="isDark ? 'border-slate-700' : 'border-slate-200'">
+                <button @click="vmDeployModal.status = 'idle'" class="btn-secondary text-sm">
+                  <RefreshCw class="w-3.5 h-3.5" /> Try Again
+                </button>
+                <button @click="closeVmDeploy" class="btn-secondary text-sm">Close</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -11,7 +11,7 @@ import { useServerStore } from './stores/serverStore'
 
 const { showToast } = useToastStore()
 const { isDark, toggleDark } = useThemeStore()
-const { isLoggedIn, githubUser, logout, getToken } = useAuthStore()
+const { isLoggedIn, githubUser, logout, getToken, canWriteConfig, fetchAndUpdateRole } = useAuthStore()
 const { loadConfigFromServer } = useServerStore()
 const router = useRouter()
 const route = useRoute()
@@ -22,8 +22,11 @@ const hideNav = computed(() => !!route.meta?.hideNav)
 // useHeartbeat(getToken)
 
 // ── Load frontend config dari Bun SQLite saat login ────────────────
-watch(isLoggedIn, (loggedIn) => {
-  if (loggedIn) loadConfigFromServer(getToken())
+watch(isLoggedIn, async (loggedIn) => {
+  if (loggedIn) {
+    await fetchAndUpdateRole()
+    loadConfigFromServer(getToken(), canWriteConfig.value)
+  }
 }, { immediate: true })
 
 // ── Global background style (shared across all pages) ──────────────
@@ -212,6 +215,16 @@ const handleLogout = () => {
                         <span v-if="u.username === githubUser.username"
                           class="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-400 shrink-0">
                           you
+                        </span>
+                        <!-- role badge -->
+                        <span v-if="u.username === githubUser.username && githubUser.role"
+                          class="text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 capitalize"
+                          :class="{
+                            'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400': githubUser.role === 'admin',
+                            'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400': githubUser.role === 'master',
+                            'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400': githubUser.role === 'slave',
+                          }">
+                          {{ githubUser.role }}
                         </span>
                       </div>
                       <div class="flex items-center gap-1 mt-0.5">

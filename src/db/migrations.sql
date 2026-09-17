@@ -55,3 +55,16 @@ CREATE TABLE IF NOT EXISTS github_users (
     avatar_url TEXT NOT NULL,
     last_seen  INTEGER NOT NULL DEFAULT 0  -- Unix timestamp, update tiap heartbeat
 );
+
+-- vm_instances (Podman nested containers: Ubuntu 24.04, Debian 12, Arch)
+CREATE TABLE IF NOT EXISTS vm_instances (
+    id           TEXT PRIMARY KEY,           -- UUID v4
+    name         TEXT UNIQUE NOT NULL,       -- nama VM (slug, juga dipakai sebagai container name suffix)
+    distro       TEXT NOT NULL,              -- 'ubuntu-2404' | 'debian-12' | 'arch'
+    username     TEXT NOT NULL,              -- user biasa yang dibuat di dalam container
+    backend_port INTEGER NOT NULL,           -- port di host yang di-forward ke container:8080
+    host_ip      TEXT NOT NULL DEFAULT '',   -- IP host untuk dashboard URL
+    container_id TEXT NOT NULL DEFAULT '',   -- Podman container name (infoinserver-vm-<name>)
+    image_tag    TEXT NOT NULL DEFAULT '',   -- image yang dipakai (localhost/infoinserver-vm-<distro>:latest)
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
