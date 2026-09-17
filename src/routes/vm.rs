@@ -739,10 +739,10 @@ WantedBy=multi-user.target
     let mut ready = false;
     for i in 0..15 {
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        // Cek via localhost (container port di-forward ke host)
+        // Cek via host_ip yang sebenarnya (bukan hardcode 127.0.0.1)
+        let ping_url = format!("http://127.0.0.1:{}/api/ping", port);
         let check = Command::new("curl")
-            .args(["-sf", "--max-time", "2",
-                   &format!("http://127.0.0.1:{}/api/ping", port)])
+            .args(["-sf", "--max-time", "2", &ping_url])
             .output()
             .await;
         if let Ok(o) = check {

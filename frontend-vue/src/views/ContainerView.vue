@@ -82,6 +82,7 @@ const vmDeployModal = ref({
   result: null,
 })
 let vmWs = null
+let vmDeployServerUrl = null  // lock ke server yang sedang di-deploy
 
 let pollInterval = null
 
@@ -410,10 +411,11 @@ const vmStateColor = (state) => {
   return isDark.value ? 'text-slate-400 bg-slate-700' : 'text-slate-600 bg-slate-100'
 }
 
-const fetchVms = async () => {
+const fetchVms = async (serverUrl) => {
+  const url = serverUrl || getActiveServerUrl()
   isLoadingVms.value = true
   try {
-    const res = await apiFetch(`${getActiveServerUrl()}/api/vm/list`)
+    const res = await apiFetch(`${url}/api/vm/list`)
     if (res.ok) {
       const data = await res.json()
       vms.value = data.vms || []
@@ -514,6 +516,7 @@ const deployVm = () => {
 
   // Build WebSocket URL — go through the Bun proxy which handles /api/* prefix
   const serverUrl = getActiveServerUrl()
+  vmDeployServerUrl = serverUrl  // lock: fetchVms setelah done harus ke server ini
   const wsBase = serverUrl.replace(/^http/, 'ws')
   const params = new URLSearchParams({
     name, distro, username, password,
@@ -531,7 +534,7 @@ const deployVm = () => {
       if (msg.event === 'done') {
         vmDeployModal.value.status = 'done'
         vmDeployModal.value.logs.push({ event: 'done', msg: msg.msg })
-        fetchVms()
+        fetchVms(vmDeployServerUrl)  // pakai URL server tempat deploy, bukan activeServer
       } else if (msg.event === 'error') {
         vmDeployModal.value.status = 'error'
         vmDeployModal.value.logs.push({ event: 'error', msg: msg.msg })
