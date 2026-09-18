@@ -25,7 +25,7 @@ const handleAdd = async () => {
   error.value = null
 
   try {
-    const res = await fetch(`${props.server.url}/api/auth/login`, {
+    const res = await fetch(`/api/proxy/${props.server.id}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

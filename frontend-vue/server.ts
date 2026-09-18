@@ -97,6 +97,15 @@ db.run(`
   )
 `)
 
+// Mapping serverId → URL asli Rust backend (tidak pernah dikirim ke browser)
+db.run(`
+  CREATE TABLE IF NOT EXISTS server_urls (
+    server_id  TEXT PRIMARY KEY,
+    url        TEXT NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )
+`)
+
 // Bootstrap: pastikan admin default selalu ada
 db.run(`
   INSERT INTO user_roles (github_username, role)
@@ -616,7 +625,86 @@ app.put('/api/frontend/config', async (c) => {
   return c.json({ ok: true })
 })
 
-// ── 11. HTTP Proxy: semua /api/* non-WS ke Rust backend ───────────────────────
+// ── 11. Proxy: POST /api/proxy/connect — login ke server target lewat Bun ─────
+// Browser tidak pernah tahu URL asli server lab — Bun yang fetch.
+// Body: { serverId, targetUrl, username, password }
+// Response: { token, username } — sama seperti Rust /api/auth/login
+app.post('/api/proxy/connect', async (c) => {
+  const username = await verifySession(c.req.header('Authorization'))
+  if (!username) return c.json({ error: 'Unauthorized' }, 401)
+
+  let body: { serverId?: string; targetUrl?: string; username?: string; password?: string }
+  try { body = await c.req.json() } catch { return c.json({ error: 'Invalid JSON' }, 400) }
+
+  const { serverId, targetUrl, username: linuxUser, password } = body
+  if (!serverId || !targetUrl || !linuxUser || !password) {
+    return c.json({ error: 'serverId, targetUrl, username, and password are required' }, 400)
+  }
+
+  // Normalisasi URL
+  const cleanUrl = targetUrl.endsWith('/') ? targetUrl.slice(0, -1) : targetUrl
+
+  // Bun fetch ke Rust backend target
+  let rustRes: Response
+  try {
+    rustRes = await fetch(`${cleanUrl}/api/auth/login`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ username: linuxUser, password }),
+    })
+  } catch (err) {
+    console.error(`[proxy/connect] Cannot reach ${cleanUrl}:`, err)
+    return c.json({ error: `Cannot connect to server at ${cleanUrl}` }, 502)
+  }
+
+  const data = await rustRes.json()
+  if (!rustRes.ok) {
+    return c.json(data, rustRes.status)
+  }
+
+  // Simpan URL asli ke SQLite — browser tidak perlu tahu
+  db.run(`
+    INSERT INTO server_urls (server_id, url, updated_at)
+    VALUES (?, ?, unixepoch())
+    ON CONFLICT(server_id) DO UPDATE SET url = excluded.url, updated_at = excluded.updated_at
+  `, [serverId, cleanUrl])
+
+  console.log(`[proxy/connect] Registered server ${serverId} → ${cleanUrl}`)
+  return c.json(data, rustRes.status)
+})
+
+// ── 12. Proxy: /api/proxy/:serverId/* — relay HTTP ke server target ───────────
+// Semua request dari browser ke /api/proxy/{id}/api/... di-forward ke URL asli.
+app.all('/api/proxy/:serverId/*', async (c) => {
+  const serverId = c.req.param('serverId')
+
+  const row = db.query('SELECT url FROM server_urls WHERE server_id = ?').get(serverId) as { url: string } | null
+  if (!row) return c.json({ error: `Server ${serverId} not registered` }, 404)
+
+  // Strip /api/proxy/:serverId dari path, sisanya forward ke Rust
+  const stripped = c.req.path.replace(`/api/proxy/${serverId}`, '')
+  const qs = c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : ''
+  const targetUrl = row.url + stripped + qs
+
+  const proxyReq = new Request(targetUrl, {
+    method:  c.req.method,
+    headers: c.req.raw.headers,
+    body:    ['GET', 'HEAD'].includes(c.req.method) ? undefined : c.req.raw.body,
+  })
+
+  try {
+    const proxyRes = await fetch(proxyReq)
+    return new Response(proxyRes.body, {
+      status:  proxyRes.status,
+      headers: proxyRes.headers,
+    })
+  } catch (err) {
+    console.error(`[proxy] Cannot reach server ${serverId} (${row.url}):`, err)
+    return c.json({ error: 'Target server unreachable' }, 502)
+  }
+})
+
+// ── 13. HTTP Proxy: semua /api/* non-WS ke Rust backend ───────────────────────
 app.all('/api/*', async (c) => {
   const url = RUST_BACKEND_URL + c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : '')
 
@@ -669,11 +757,26 @@ const server = Bun.serve<WsData>({
 
     // Deteksi WebSocket upgrade: path /api/* dengan header Upgrade: websocket
     if (url.pathname.startsWith('/api/') && req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
-      const backendUrl = RUST_WS_URL + url.pathname + url.search
+      let backendUrl: string
+
+      // WebSocket ke server lab via proxy: /api/proxy/:serverId/api/.../ws
+      const proxyMatch = url.pathname.match(/^\/api\/proxy\/([^/]+)(\/.*)$/)
+      if (proxyMatch) {
+        const serverId = proxyMatch[1]
+        const restPath = proxyMatch[2]
+        const row = db.query('SELECT url FROM server_urls WHERE server_id = ?').get(serverId) as { url: string } | null
+        if (!row) return new Response('Server not registered', { status: 404 })
+        const wsTargetUrl = row.url.replace(/^http/, 'ws')
+        backendUrl = wsTargetUrl + restPath + url.search
+      } else {
+        // WebSocket ke Rust backend lokal (untuk server gateway itu sendiri)
+        backendUrl = RUST_WS_URL + url.pathname + url.search
+      }
+
       const success = server.upgrade(req, {
         data: { backendUrl, backendWs: null },
       })
-      if (success) return undefined  // upgrade berhasil, Bun akan panggil websocket handlers
+      if (success) return undefined
       return new Response('WebSocket upgrade failed', { status: 400 })
     }
 

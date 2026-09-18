@@ -52,7 +52,7 @@ const checkPing = async (server) => {
   const timer = setTimeout(() => controller.abort(), PING_TIMEOUT_MS)
   const start = performance.now()
   try {
-    await fetch(`${server.url}/api/ping`, { signal: controller.signal })
+    await fetch(`/api/proxy/${server.id}/api/ping`, { signal: controller.signal })
     pingState.value[server.id] = { ms: Math.round(performance.now() - start), online: true }
   } catch {
     pingState.value[server.id] = { ms: null, online: false }
@@ -271,22 +271,26 @@ const handleAdd = async () => {
     addError.value = 'All fields are required'; return
   }
   const cleanUrl = normalizeUrl(newUrl.value)
+  const id = Date.now().toString()
   isAdding.value = true
   try {
-    const res = await fetch(`${cleanUrl}/api/auth/login`, {
+    // Kirim ke Bun proxy — browser tidak pernah langsung konek ke server lab
+    const res = await fetch('/api/proxy/connect', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: newUser.value.trim(), password: newPass.value })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getGithubToken()}`
+      },
+      body: JSON.stringify({ serverId: id, targetUrl: cleanUrl, username: newUser.value.trim(), password: newPass.value })
     })
     const data = await res.json()
     if (!res.ok) { addError.value = data.error || `Authentication failed (${res.status})`; return }
 
-    const id = Date.now().toString()
     addServer(newName.value.trim(), cleanUrl, id)
     setToken(id, data.token, data.username)
     pingState.value[id] = { ms: null, online: null }
-    checkPing({ id, url: cleanUrl })
-    intervals.push(setInterval(() => checkPing({ id, url: cleanUrl }), PING_INTERVAL_MS))
+    checkPing({ id, url: `/api/proxy/${id}` })
+    intervals.push(setInterval(() => checkPing({ id, url: `/api/proxy/${id}` }), PING_INTERVAL_MS))
 
     closeAddModal()
     setActiveServer(id)

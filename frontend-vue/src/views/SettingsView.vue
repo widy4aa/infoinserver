@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApi } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
+import { useAuthStore } from '../stores/authStore'
 import { useToastStore } from '../stores/toastStore'
 import { Settings, Plus, Trash2, Power, RefreshCw, Edit2, LogIn, Loader2, AlertCircle, User, Lock, Cloud, Shield, Ban } from 'lucide-vue-next'
 
@@ -10,6 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const { apiFetch } = useApi()
 const { servers, addServer, removeServer, setActiveServer, getActiveServerUrl, updateServerName, setToken } = useServerStore()
+const { getToken: getGithubToken } = useAuthStore()
 const { showToast, showConfirm } = useToastStore()
 
 // ── Add Server form ───────────────────────────────────────
@@ -36,14 +38,18 @@ const handleAdd = async () => {
 
   const cleanUrl = normalizeUrl(newUrl.value)
   newUrl.value = cleanUrl
+  const id = Date.now().toString()
   isAdding.value = true
 
   try {
-    // 1. Coba login ke server dulu
-    const res = await fetch(`${cleanUrl}/api/auth/login`, {
+    // Kirim ke Bun proxy — browser tidak pernah langsung konek ke server lab
+    const res = await fetch('/api/proxy/connect', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: newUser.value.trim(), password: newPass.value })
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getGithubToken()}`
+      },
+      body: JSON.stringify({ serverId: id, targetUrl: cleanUrl, username: newUser.value.trim(), password: newPass.value })
     })
 
     const data = await res.json()
@@ -53,18 +59,17 @@ const handleAdd = async () => {
       return
     }
 
-    // 2. Login sukses → simpan server + token
-    const id = Date.now().toString()
+    // Login sukses → simpan server + token
     addServer(newName.value.trim(), cleanUrl, id)
     setToken(id, data.token, data.username)
 
-    // 3. Reset form
+    // Reset form
     newName.value = ''
     newUrl.value  = ''
     newUser.value = ''
     newPass.value = ''
 
-    // 4. Langsung ke dashboard server baru
+    // Langsung ke dashboard server baru
     setActiveServer(id)
     router.push(`/server/${id}/dashboard`)
 

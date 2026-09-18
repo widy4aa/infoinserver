@@ -124,7 +124,9 @@ export const useServerStore = () => {
 
   const getActiveServerUrl = () => {
     const server = servers.value.find(s => s.id === activeServerId.value)
-    return server ? server.url : 'http://127.0.0.1:3000'
+    if (!server) return ''
+    // Semua traffic ke server lab di-proxy lewat Bun — browser tidak tahu URL asli
+    return `/api/proxy/${server.id}`
   }
 
   // ── Token management ──────────────────────────────────────────────────────

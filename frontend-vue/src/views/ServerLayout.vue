@@ -71,13 +71,12 @@ const pingMs = ref(null)
 let pingInterval = null
 
 const checkPing = async () => {
-  if (!currentServer.value?.url) return
-  const url = currentServer.value.url.startsWith('http') ? currentServer.value.url : `http://${currentServer.value.url}`
+  if (!currentServer.value?.id) return
   const startTime = performance.now()
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 3000)
-    await fetch(`${url}/api/ping`, { signal: controller.signal })
+    await fetch(`/api/proxy/${currentServer.value.id}/api/ping`, { signal: controller.signal })
     clearTimeout(timeoutId)
     pingMs.value = Math.round(performance.now() - startTime)
   } catch (e) {
