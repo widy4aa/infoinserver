@@ -39,6 +39,27 @@ export const isTokenExpired = (token, bufferSeconds = 300) => {
   return payload.exp - nowSecs < bufferSeconds
 }
 
+/**
+ * Parse response sebagai JSON secara aman.
+ * Jika response bukan JSON (plain text, HTML, dll), kembalikan { error: <text> }.
+ * Gunakan ini sebagai pengganti res.json() di seluruh codebase.
+ * @param {Response} res
+ * @returns {Promise<any>}
+ */
+export const safeJson = async (res) => {
+  const contentType = res.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    try { return await res.json() } catch { return { error: 'Invalid JSON response' } }
+  }
+  // Bukan JSON — baca sebagai teks, wrap jadi object
+  try {
+    const text = await res.text()
+    return { error: text || `HTTP ${res.status}` }
+  } catch {
+    return { error: `HTTP ${res.status}` }
+  }
+}
+
 // ── Refresh lock — cegah multiple concurrent refresh calls ───────────────────
 let _refreshPromise = null
 
@@ -56,7 +77,7 @@ const refreshToken = async (serverUrl, currentToken) => {
   })
     .then(async (res) => {
       if (!res.ok) return null
-      const data = await res.json()
+      const data = await safeJson(res)
       return data.token || null
     })
     .catch(() => null)

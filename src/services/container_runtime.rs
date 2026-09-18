@@ -21,48 +21,51 @@ pub struct RuntimeInfo {
 
 /// Auto-detect: coba podman dulu, fallback ke docker
 pub fn detect_runtime() -> Result<RuntimeInfo, String> {
-    // 1. Coba podman
-    if let Ok(out) = Command::new("podman").arg("--version").output() {
-        if out.status.success() {
-            let version = String::from_utf8_lossy(&out.stdout)
-                .split_whitespace()
-                .nth(2)
-                .unwrap_or("unknown")
-                .trim()
-                .to_string();
-
-            let compose_binary = detect_compose_binary("podman");
-            return Ok(RuntimeInfo {
-                kind: RuntimeKind::Podman,
-                binary: "podman".to_string(),
-                version,
-                compose_binary,
-            });
+    // Kandidat binary podman (nama pendek + full path sebagai fallback)
+    let podman_candidates = ["podman", "/usr/bin/podman", "/usr/local/bin/podman"];
+    for bin in &podman_candidates {
+        if let Ok(out) = Command::new(bin).arg("--version").output() {
+            if out.status.success() {
+                let version = String::from_utf8_lossy(&out.stdout)
+                    .split_whitespace()
+                    .nth(2)
+                    .unwrap_or("unknown")
+                    .trim()
+                    .to_string();
+                let compose_binary = detect_compose_binary(bin);
+                return Ok(RuntimeInfo {
+                    kind: RuntimeKind::Podman,
+                    binary: bin.to_string(),
+                    version,
+                    compose_binary,
+                });
+            }
         }
     }
 
-    // 2. Fallback: coba docker
-    if let Ok(out) = Command::new("docker").arg("--version").output() {
-        if out.status.success() {
-            let raw = String::from_utf8_lossy(&out.stdout).to_string();
-            // "Docker version 24.x.x, build ..."
-            let version = raw
-                .split(',')
-                .next()
-                .unwrap_or(&raw)
-                .split_whitespace()
-                .last()
-                .unwrap_or("unknown")
-                .trim()
-                .to_string();
-
-            let compose_binary = detect_compose_binary("docker");
-            return Ok(RuntimeInfo {
-                kind: RuntimeKind::Docker,
-                binary: "docker".to_string(),
-                version,
-                compose_binary,
-            });
+    // Kandidat binary docker
+    let docker_candidates = ["docker", "/usr/bin/docker", "/usr/local/bin/docker"];
+    for bin in &docker_candidates {
+        if let Ok(out) = Command::new(bin).arg("--version").output() {
+            if out.status.success() {
+                let raw = String::from_utf8_lossy(&out.stdout).to_string();
+                let version = raw
+                    .split(',')
+                    .next()
+                    .unwrap_or(&raw)
+                    .split_whitespace()
+                    .last()
+                    .unwrap_or("unknown")
+                    .trim()
+                    .to_string();
+                let compose_binary = detect_compose_binary(bin);
+                return Ok(RuntimeInfo {
+                    kind: RuntimeKind::Docker,
+                    binary: bin.to_string(),
+                    version,
+                    compose_binary,
+                });
+            }
         }
     }
 
@@ -82,13 +85,18 @@ fn detect_compose_binary(runtime: &str) -> String {
     }
 
     // Fallback: podman-compose / docker-compose (legacy)
-    let legacy = if runtime == "podman" {
-        "podman-compose"
+    // Cek apakah runtime ini podman (bisa full path atau nama pendek)
+    let is_podman = runtime == "podman" || runtime.ends_with("/podman");
+    let legacy_candidates: &[&str] = if is_podman {
+        &["podman-compose", "/usr/bin/podman-compose", "/usr/local/bin/podman-compose"]
     } else {
-        "docker-compose"
+        &["docker-compose", "/usr/bin/docker-compose", "/usr/local/bin/docker-compose"]
     };
-    if Command::new(legacy).arg("--version").output().is_ok() {
-        return legacy.to_string();
+
+    for legacy in legacy_candidates {
+        if Command::new(legacy).arg("--version").output().is_ok() {
+            return legacy.to_string();
+        }
     }
 
     // Jika tidak ada compose sama sekali, return empty string

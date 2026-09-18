@@ -1,7 +1,4 @@
 Container runtime: podman v6.1.1 (compose: podman compose)
 Server running on http://0.0.0.0:8080
-
-thread 'main' (57797) panicked at src/main.rs:206:51:
-called `Result::unwrap()` on an `Err` value: Os { code: 98, kind: AddrInUse, message: "Address already in use" }
-note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
 Scheduler: Running scheduled speedtest...
+Scheduler: Speedtest success - D: 36.19 Mbps, U: 20.31 Mbps

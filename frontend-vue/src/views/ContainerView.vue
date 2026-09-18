@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useApi } from '../composables/useApi'
+import { useApi, safeJson } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
 import { useThemeStore } from '../stores/themeStore'
@@ -114,7 +114,7 @@ const fetchRuntime = async () => {
   isLoadingRuntime.value = true
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/container/runtime`)
-    if (res.ok) runtime.value = await res.json()
+    if (res.ok) runtime.value = await safeJson(res)
   } catch (e) {}
   finally { isLoadingRuntime.value = false }
 }
@@ -122,12 +122,12 @@ const fetchRuntime = async () => {
 const refreshRuntime = async () => {
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/container/runtime/refresh`, { method: 'POST' })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (res.ok) {
       showToast('Success', data.message, 'success')
       await fetchRuntime()
     } else {
-      showToast('Error', data, 'error')
+      showToast('Error', data.error || data.message || 'Failed to detect runtime', 'error')
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -140,7 +140,7 @@ const fetchContainers = async () => {
   isLoadingContainers.value = true
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/container/list`)
-    if (res.ok) containers.value = await res.json()
+    if (res.ok) containers.value = await safeJson(res)
   } catch (e) {}
   finally { isLoadingContainers.value = false }
 }
@@ -148,12 +148,12 @@ const fetchContainers = async () => {
 const doAction = async (action, id, name) => {
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/container/${action}/${id}`, { method: 'POST' })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (res.ok) {
       showToast('Success', data.message, 'success')
       await fetchContainers()
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
+      showToast('Error', typeof data === 'string' ? data : data.error || data.message || JSON.stringify(data), 'error')
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -172,8 +172,8 @@ const viewLogs = async (id, name) => {
   logsModal.value = { open: true, title: `Logs — ${name}`, logs: '', loading: true }
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/container/logs/${id}?tail=200`)
-    const data = await res.json()
-    logsModal.value.logs = data.logs || 'No logs.'
+    const data = await safeJson(res)
+    logsModal.value.logs = data.logs || data.error || 'No logs.'
   } catch (e) {
     logsModal.value.logs = `Error: ${e.message}`
   } finally {
@@ -185,7 +185,7 @@ const viewInspect = async (id, name) => {
   inspectModal.value = { open: true, title: `Inspect — ${name}`, data: null }
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/container/inspect/${id}`)
-    inspectModal.value.data = await res.json()
+    inspectModal.value.data = await safeJson(res)
   } catch (e) {
     inspectModal.value.data = { error: e.message }
   }
@@ -212,7 +212,7 @@ const deployContainer = async () => {
         restart_policy: dcRestart.value || null
       })
     })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (res.ok) {
       showToast('Success', data.message, 'success')
       dcName.value = ''; dcImage.value = ''; dcPorts.value = ''
@@ -220,7 +220,7 @@ const deployContainer = async () => {
       await fetchContainers()
       activeTab.value = 'containers'
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
+      showToast('Error', typeof data === 'string' ? data : data.error || data.message || JSON.stringify(data), 'error')
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -235,7 +235,7 @@ const fetchCompose = async () => {
   isLoadingCompose.value = true
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/compose/projects`)
-    if (res.ok) composeProjects.value = await res.json()
+    if (res.ok) composeProjects.value = await safeJson(res)
   } catch (e) {}
   finally { isLoadingCompose.value = false }
 }
@@ -252,7 +252,7 @@ const deployCompose = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: cpName.value, yaml: cpYaml.value })
     })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (res.ok) {
       showToast('Success', data.message, 'success')
       cpName.value = ''
@@ -260,7 +260,7 @@ const deployCompose = async () => {
       await fetchContainers()
       activeTab.value = 'compose'
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
+      showToast('Error', typeof data === 'string' ? data : data.error || data.message || JSON.stringify(data), 'error')
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -272,13 +272,13 @@ const deployCompose = async () => {
 const composeAction = async (action, name) => {
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/compose/${name}/${action}`, { method: 'POST' })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (res.ok) {
       showToast('Success', data.message, 'success')
       await fetchCompose()
       await fetchContainers()
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message || JSON.stringify(data), 'error')
+      showToast('Error', typeof data === 'string' ? data : data.error || data.message || JSON.stringify(data), 'error')
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -292,13 +292,13 @@ const deleteCompose = (name, withVolumes = false) => {
     async () => {
       try {
         const res = await apiFetch(`${getActiveServerUrl()}/api/compose/${name}?remove_volumes=${withVolumes}`, { method: 'DELETE' })
-        const data = await res.json()
+        const data = await safeJson(res)
         if (res.ok) {
           showToast('Success', data.message, 'success')
           await fetchCompose()
           await fetchContainers()
         } else {
-          showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+          showToast('Error', typeof data === 'string' ? data : data.error || data.message, 'error')
         }
       } catch (e) {
         showToast('Error', e.message, 'error')
@@ -315,8 +315,8 @@ const viewComposeLogs = async (name, service = null) => {
       ? `${getActiveServerUrl()}/api/compose/${name}/logs?service=${service}&tail=200`
       : `${getActiveServerUrl()}/api/compose/${name}/logs?tail=200`
     const res = await apiFetch(url)
-    const data = await res.json()
-    logsModal.value.logs = data.logs || 'No logs.'
+    const data = await safeJson(res)
+    logsModal.value.logs = data.logs || data.error || 'No logs.'
   } catch (e) {
     logsModal.value.logs = `Error: ${e.message}`
   } finally {
@@ -328,8 +328,8 @@ const openYamlModal = async (name) => {
   yamlModal.value = { open: true, projectName: name, yaml: '', editing: false, saving: false }
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/compose/${name}/yaml`)
-    const data = await res.json()
-    yamlModal.value.yaml = data.yaml || ''
+    const data = await safeJson(res)
+    yamlModal.value.yaml = data.yaml || data.error || ''
   } catch (e) {
     yamlModal.value.yaml = `Error: ${e.message}`
   }
@@ -343,14 +343,14 @@ const saveYaml = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ yaml: yamlModal.value.yaml })
     })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (res.ok) {
       showToast('Success', data.message, 'success')
       yamlModal.value.editing = false
       await fetchCompose()
       await fetchContainers()
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+      showToast('Error', typeof data === 'string' ? data : data.error || data.message, 'error')
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -370,14 +370,14 @@ const doScale = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ service: scaleModal.value.service, count: scaleModal.value.count })
     })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (res.ok) {
       showToast('Success', data.message, 'success')
       scaleModal.value.open = false
       await fetchCompose()
       await fetchContainers()
     } else {
-      showToast('Error', typeof data === 'string' ? data : data.message, 'error')
+      showToast('Error', typeof data === 'string' ? data : data.error || data.message, 'error')
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -417,7 +417,7 @@ const fetchVms = async (serverUrl) => {
   try {
     const res = await apiFetch(`${url}/api/vm/list`)
     if (res.ok) {
-      const data = await res.json()
+      const data = await safeJson(res)
       vms.value = data.vms || []
     }
   } catch (e) {}
@@ -427,12 +427,12 @@ const fetchVms = async (serverUrl) => {
 const vmAction = async (action, name) => {
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/vm/${name}/${action}`, { method: 'POST' })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (res.ok) {
       showToast('Success', data.message, 'success')
       await fetchVms()
     } else {
-      showToast('Error', data.message || data, 'error')
+      showToast('Error', data.error || data.message || data, 'error')
     }
   } catch (e) {
     showToast('Error', e.message, 'error')
@@ -446,12 +446,12 @@ const deleteVm = (name) => {
     async () => {
       try {
         const res = await apiFetch(`${getActiveServerUrl()}/api/vm/${name}`, { method: 'DELETE' })
-        const data = await res.json()
+        const data = await safeJson(res)
         if (res.ok) {
           showToast('Success', data.message, 'success')
           await fetchVms()
         } else {
-          showToast('Error', data.message || data, 'error')
+          showToast('Error', data.error || data.message || data, 'error')
         }
       } catch (e) {
         showToast('Error', e.message, 'error')
