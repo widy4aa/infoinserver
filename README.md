@@ -246,41 +246,102 @@ chmod +x start.sh && ./start.sh --backend
 
 ## Environment Variables
 
-### Rust Backend (`.env`)
+Ada **2 file `.env`** yang perlu dikonfigurasi — satu untuk Rust backend, satu untuk Bun server. Keduanya **tidak saling berbagi** file, kecuali `JWT_SECRET` yang **harus identik** di keduanya.
 
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `PORT` | `8080` | No | Backend HTTP port |
-| `FILE_ROOT` | `$HOME` | No | Root path for file write operations |
-| `DB_PATH` | `sqlite:./data.db` | No | SQLite database path |
-| `JWT_SECRET` | *(insecure fallback)* | **Yes** | JWT signing secret — must match Bun server |
-| `CORS_ORIGIN` | `http://localhost:3000` | **Yes** | Allowed CORS origin (Bun server URL) |
+```
+infoinserver/
+├── .env                  ← Rust backend
+└── frontend-vue/
+    └── .env              ← Bun + Hono server (GitHub OAuth, proxy, config)
+```
 
-### Bun Server (`frontend-vue/.env`)
-
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `FRONTEND_PORT` | `3000` | No | Bun server port |
-| `RUST_BACKEND_URL` | `http://localhost:8080` | **Yes** | URL of Rust backend (internal) |
-| `FRONTEND_URL` | `http://localhost:3000` | **Yes** | Public URL of this Bun server |
-| `JWT_SECRET` | *(insecure fallback)* | **Yes** | Must be **identical** to Rust backend `JWT_SECRET` |
-| `GITHUB_CLIENT_ID` | — | **Yes** | GitHub OAuth App client ID |
-| `GITHUB_CLIENT_SECRET` | — | **Yes** | GitHub OAuth App client secret |
-| `GITHUB_REDIRECT_URI` | — | **Yes** | Must match callback URL in GitHub OAuth App settings |
-| `GITHUB_SESSION_SECRET` | *(insecure fallback)* | **Yes** | Secret for signing GitHub session tokens |
-| `FRONTEND_DB_PATH` | `./frontend.db` | No | SQLite path for frontend config storage |
-| `NODE_ENV` | — | No | Set to `production` to serve static files; omit for dev mode |
-| `VITE_DEV_URL` | `http://localhost:5173` | No | Vite dev server URL (dev mode only, commented out in `.env.example` by default) |
-| `DEFAULT_ADMIN` | `widy4aa` | **Yes** | GitHub username whose config row is used as the shared global config. Set to your own GitHub username. |
+> **Penting:** `JWT_SECRET` di `.env` dan `frontend-vue/.env` harus **sama persis**. Bun menandatangani JWT, Rust memverifikasinya dengan secret yang sama.
 
 ---
 
-## Production (Docker/Podman)
+### Rust Backend (`.env`)
+
+Template: `cp .env.example .env`
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `PORT` | `8080` | No | Port HTTP server Rust |
+| `DB_PATH` | `sqlite:./data.db` | No | Path file SQLite metrics. Dibuat otomatis jika belum ada |
+| `JWT_SECRET` | *(fallback tidak aman)* | **Yes** | Secret untuk sign & verify JWT Linux user session. Harus sama dengan `JWT_SECRET` di `frontend-vue/.env` |
+| `FILE_ROOT` | `$HOME` | No | Root direktori untuk operasi tulis di File Explorer (upload, delete, rename, chmod). `$HOME` di-expand ke home dir user aktif |
+| `CORS_ORIGIN` | `http://localhost:3000` | **Yes** | Origin yang diizinkan CORS — harus sama dengan URL Bun server (`FRONTEND_URL`) |
+
+**Variabel OS-level** yang juga dibaca Rust dari environment shell (tidak perlu di-set di `.env`, sudah otomatis tersedia):
+
+| Variable | Dibaca di | Keterangan |
+|---|---|---|
+| `HOME` | `src/routes/files.rs`, `src/routes/cloudflare.rs`, `src/routes/logs.rs` | Home directory user yang menjalankan Rust |
+| `USER` | `src/routes/logs.rs`, `src/services/proc_reader.rs` | Username aktif. Jika tidak ada, fallback ke `LOGNAME` |
+| `LOGNAME` | `src/services/proc_reader.rs` | Fallback username jika `USER` tidak ter-set |
+
+---
+
+### Bun Server (`frontend-vue/.env`)
+
+Template: `cp frontend-vue/.env.example frontend-vue/.env`
+
+| Variable | Default | Required | Description |
+|---|---|---|---|
+| `FRONTEND_PORT` | `3000` | No | Port listen Bun server |
+| `RUST_BACKEND_URL` | `http://localhost:8080` | **Yes** | URL internal ke Rust backend. Semua `/api/*` request di-proxy ke sini |
+| `FRONTEND_URL` | `http://localhost:3000` | **Yes** | URL publik Bun server. Dipakai sebagai base redirect setelah GitHub OAuth |
+| `JWT_SECRET` | *(fallback tidak aman)* | **Yes** | Harus **sama persis** dengan `JWT_SECRET` di root `.env` (Rust backend) |
+| `GITHUB_CLIENT_ID` | — | **Yes** | Client ID dari GitHub OAuth App |
+| `GITHUB_CLIENT_SECRET` | — | **Yes** | Client Secret dari GitHub OAuth App |
+| `GITHUB_REDIRECT_URI` | `{FRONTEND_URL}/api/auth/github/callback` | **Yes** | Harus sama persis dengan "Authorization callback URL" di GitHub OAuth App settings |
+| `GITHUB_SESSION_SECRET` | *(fallback tidak aman)* | **Yes** | Secret untuk sign session token GitHub OAuth. Gunakan random string kuat |
+| `FRONTEND_DB_PATH` | `./frontend.db` | No | Path SQLite untuk menyimpan frontend config (server list, labels, urutan) |
+| `DEFAULT_ADMIN` | `widy4aa` | **Yes** | GitHub username yang dijadikan sumber global config bersama. Ganti dengan GitHub username kamu sendiri |
+| `NODE_ENV` | *(unset = dev mode)* | No | Set ke `production` untuk serve static files hasil build Vite. Omit untuk dev mode |
+| `VITE_DEV_URL` | `http://localhost:5173` | No | URL Vite dev server. Hanya aktif saat `NODE_ENV != production`. Uncomment di `.env.example` jika perlu |
+
+---
+
+### Podman Compose (`docker-compose.yml`)
+
+Saat menggunakan `podman compose up`, beberapa variabel **wajib diset di shell host** (atau via file `.env` di root project) karena di-interpolasi langsung oleh compose:
+
+```bash
+# Set di shell sebelum menjalankan podman compose:
+export FRONTEND_URL=http://YOUR_IP:3000
+export JWT_SECRET=your-strong-random-secret
+export GITHUB_CLIENT_ID=your-client-id
+export GITHUB_CLIENT_SECRET=your-client-secret
+export GITHUB_REDIRECT_URI=http://YOUR_IP:3000/api/auth/github/callback
+export GITHUB_SESSION_SECRET=your-session-secret
+
+podman compose up -d --build
+```
+
+| Variable di Compose | Behavior | Nilai Hardcoded di Compose |
+|---|---|---|
+| `NODE_ENV` | Hardcoded `production` | Ya |
+| `FRONTEND_PORT` | Hardcoded `3000` | Ya |
+| `RUST_BACKEND_URL` | Hardcoded `http://host.gateway.internal:8080` | Ya (route ke host) |
+| `FRONTEND_URL` | `${FRONTEND_URL:-http://127.0.0.1:3000}` | Fallback ke `127.0.0.1:3000` |
+| `JWT_SECRET` | `${JWT_SECRET}` — **wajib**, tanpa fallback | Tidak |
+| `GITHUB_CLIENT_ID` | `${GITHUB_CLIENT_ID}` — **wajib**, tanpa fallback | Tidak |
+| `GITHUB_CLIENT_SECRET` | `${GITHUB_CLIENT_SECRET}` — **wajib**, tanpa fallback | Tidak |
+| `GITHUB_REDIRECT_URI` | `${GITHUB_REDIRECT_URI}` — **wajib**, tanpa fallback | Tidak |
+| `GITHUB_SESSION_SECRET` | `${GITHUB_SESSION_SECRET}` — **wajib**, tanpa fallback | Tidak |
+
+> `DEFAULT_ADMIN` dan `FRONTEND_DB_PATH` tidak ada di `docker-compose.yml` — jika ingin menggantinya saat pakai compose, tambahkan manual ke blok `environment:` di file tersebut.
+
+> Rust backend **tidak dijalankan** lewat compose — hanya Bun server yang dikontainerisasi. Rust tetap harus dijalankan terpisah di host.
+
+---
+
+## Production (Podman Compose)
 
 ```bash
 podman compose up -d --build
-# Bun server at http://YOUR_IP:3000
-# Rust backend must be running separately
+# Bun server berjalan di http://YOUR_IP:3000
+# Rust backend harus sudah berjalan terpisah di host (port 8080)
 ```
 
 ---
