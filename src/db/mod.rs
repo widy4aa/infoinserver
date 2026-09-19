@@ -1,15 +1,27 @@
-use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
-use std::fs;
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
+    SqlitePool,
+};
+use std::str::FromStr;
 
 pub async fn init_db(db_url: &str) -> Result<SqlitePool, sqlx::Error> {
-    let db_path = db_url.replace("sqlite:", "");
-    if !std::path::Path::new(&db_path).exists() {
-        fs::File::create(&db_path).unwrap_or_else(|_| panic!("Failed to create db file at {}", db_path));
-    }
+    // Gunakan SqliteConnectOptions untuk kontrol penuh atas koneksi:
+    // - journal_mode(Wal)    → fix SQLITE_READONLY_DBMOVED (code 1032), WAL tidak
+    //                          melakukan inode-check saat write, dan concurrent
+    //                          readers tidak diblokir oleh writer
+    // - create_if_missing    → buat file DB otomatis jika belum ada (menggantikan
+    //                          manual fs::File::create di atas)
+    // - busy_timeout(5s)     → retry otomatis sampai 5 detik jika ada lock contention
+    //                          sebelum return error, bukan langsung gagal
+    let conn_opts = SqliteConnectOptions::from_str(db_url)
+        .map_err(|e| sqlx::Error::Configuration(e.to_string().into()))?
+        .journal_mode(SqliteJournalMode::Wal)
+        .create_if_missing(true)
+        .busy_timeout(std::time::Duration::from_secs(5));
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(db_url)
+        .connect_with(conn_opts)
         .await?;
 
     // Jalankan migrasi utama
