@@ -122,6 +122,17 @@ db.run(`
   )
 `)
 
+// Catatan per-server — dibaca oleh semua user yang login (shared/public notepad)
+// Berguna untuk menginfokan kondisi server, hal yang tidak boleh dilakukan, dll
+db.run(`
+  CREATE TABLE IF NOT EXISTS server_notes (
+    server_id   TEXT PRIMARY KEY,
+    content     TEXT NOT NULL DEFAULT '',
+    updated_by  TEXT,          -- GitHub username yang terakhir edit
+    updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+  )
+`)
+
 // Bootstrap: pastikan admin default selalu ada
 db.run(`
   INSERT INTO user_roles (github_username, role)
@@ -641,7 +652,57 @@ app.put('/api/frontend/config', async (c) => {
   return c.json({ ok: true })
 })
 
-// ── 11. Client Error Log: POST /api/client-errors — terima error dari browser ─
+// ── 11. Server Notes: GET /api/server-notes/:serverId ────────────────────────
+// Ambil catatan untuk server tertentu. Semua user yang login bisa baca.
+app.get('/api/server-notes/:serverId', async (c) => {
+  const username = await verifySession(c.req.header('Authorization'))
+  if (!username) return c.json({ error: 'Unauthorized' }, 401)
+
+  const serverId = c.req.param('serverId')
+  const row = db.query(
+    'SELECT content, updated_by, updated_at FROM server_notes WHERE server_id = ?'
+  ).get(serverId) as { content: string; updated_by: string | null; updated_at: number } | null
+
+  return c.json({
+    server_id:  serverId,
+    content:    row?.content    ?? '',
+    updated_by: row?.updated_by ?? null,
+    updated_at: row?.updated_at ?? null,
+  })
+})
+
+// ── 12. Server Notes: PUT /api/server-notes/:serverId ────────────────────────
+// Simpan/update catatan. Hanya admin dan master yang boleh edit.
+// Slave bisa baca (GET) tapi tidak bisa tulis (PUT).
+app.put('/api/server-notes/:serverId', async (c) => {
+  const username = await verifySession(c.req.header('Authorization'))
+  if (!username) return c.json({ error: 'Unauthorized' }, 401)
+
+  const role = getUserRole(username)
+  if (!canRoleWrite(role)) {
+    return c.json({ error: 'Hanya admin dan master yang bisa mengedit catatan server' }, 403)
+  }
+
+  const serverId = c.req.param('serverId')
+  let body: { content?: string }
+  try { body = await c.req.json() } catch { return c.json({ error: 'Invalid JSON' }, 400) }
+
+  const content = body.content ?? ''
+  const now = Math.floor(Date.now() / 1000)
+
+  db.run(`
+    INSERT INTO server_notes (server_id, content, updated_by, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(server_id) DO UPDATE SET
+      content    = excluded.content,
+      updated_by = excluded.updated_by,
+      updated_at = excluded.updated_at
+  `, [serverId, content, username, now])
+
+  return c.json({ ok: true, updated_by: username, updated_at: now })
+})
+
+// ── 13. Client Error Log: POST /api/client-errors ────────────────────────────
 // Browser kirim error batch setiap kali apiFetch dapat response >= 400.
 // Tidak butuh auth Linux, cukup GitHub session (agar tidak bisa diisi sembarang).
 app.post('/api/client-errors', async (c) => {

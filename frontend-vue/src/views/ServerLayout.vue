@@ -20,6 +20,27 @@ const showLogin = ref(false)
 const showUserDropdown = ref(false)
 const showAddUserModal = ref(false)
 
+// Ref ke button trigger — untuk hitung posisi dropdown fixed
+const userSwitcherBtn = ref(null)
+const dropdownStyle = ref({})
+
+const openUserDropdown = (e) => {
+  showUserDropdown.value = !showUserDropdown.value
+  if (showUserDropdown.value) {
+    const btn = userSwitcherBtn.value
+    if (btn) {
+      const rect = btn.getBoundingClientRect()
+      dropdownStyle.value = {
+        position: 'fixed',
+        top:      rect.bottom + 6 + 'px',
+        left:     rect.left + 'px',
+        width:    rect.width + 'px',
+        zIndex:   99999,
+      }
+    }
+  }
+}
+
 const currentUsers = computed(() => {
   if (!currentServer.value?.id) return []
   return listServerUsers(currentServer.value.id)
@@ -55,7 +76,9 @@ const handleAddUserSuccess = (newUsername, newToken) => {
 }
 
 const handleClickOutside = (e) => {
-  if (!e.target.closest('.user-switcher-container')) {
+  // Tutup jika klik di luar button trigger DAN di luar dropdown (yang ada di body via Teleport)
+  const btn = userSwitcherBtn.value
+  if (btn && !btn.contains(e.target) && !e.target.closest('.user-switcher-dropdown')) {
     showUserDropdown.value = false
   }
 }
@@ -115,6 +138,8 @@ const handleAuthExpired = (e) => {
   }
 }
 
+const closeDropdown = () => { showUserDropdown.value = false }
+
 onMounted(() => {
   const sid = route.params.id
   setActiveServer(sid)
@@ -122,6 +147,8 @@ onMounted(() => {
   checkAuth()
   window.addEventListener('auth:expired', handleAuthExpired)
   window.addEventListener('click', handleClickOutside)
+  window.addEventListener('resize', closeDropdown)
+  window.addEventListener('scroll', closeDropdown, true)
   checkPing()
   pingInterval = setInterval(checkPing, 3000)
   if (!isAuthenticated(sid)) showLogin.value = true
@@ -130,6 +157,8 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('auth:expired', handleAuthExpired)
   window.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('resize', closeDropdown)
+  window.removeEventListener('scroll', closeDropdown, true)
   if (pingInterval) clearInterval(pingInterval)
 })
 
@@ -156,14 +185,14 @@ const navItems = computed(() => [
     <aside class="w-64 shrink-0 flex flex-col gap-3 sticky top-24 h-fit">
 
       <!-- Server identity card — liquid glass -->
-      <div class="rounded-2xl overflow-hidden border"
+      <div class="rounded-2xl border"
            :class="isDark ? 'border-white/8' : 'border-white/30'"
            :style="isDark
              ? 'background: rgba(15,23,42,0.55); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: 0 4px 24px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.06);'
              : 'background: rgba(255,255,255,0.55); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); box-shadow: 0 4px 24px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8);'">
 
         <!-- Distro banner — full width, square-ish -->
-        <div class="relative w-full h-28 flex items-center justify-center border-b"
+        <div class="relative w-full h-28 flex items-center justify-center border-b rounded-t-2xl overflow-hidden"
              :class="isDark ? 'border-white/6 bg-slate-900/40' : 'border-black/5 bg-slate-100/60'">
           <!-- Back button — pojok kiri atas -->
           <RouterLink to="/" @click="handleGoHome"
@@ -204,7 +233,8 @@ const navItems = computed(() => [
 
           <!-- User switcher -->
           <div class="relative user-switcher-container" v-if="activeUser">
-            <button @click.stop="showUserDropdown = !showUserDropdown"
+            <button ref="userSwitcherBtn"
+              @click.stop="openUserDropdown"
               class="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-semibold transition-colors"
               :class="isDark ? 'bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50' : 'bg-cyan-100/80 text-cyan-700 hover:bg-cyan-100'">
               <User class="w-3 h-3 shrink-0" />
@@ -212,40 +242,43 @@ const navItems = computed(() => [
               <ChevronDown class="w-3 h-3 shrink-0 transition-transform" :class="showUserDropdown ? 'rotate-180' : ''" />
             </button>
 
-            <div v-if="showUserDropdown"
-              class="absolute left-0 top-full mt-1.5 w-full rounded-xl border z-[200] overflow-hidden"
-              :class="isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'"
-              style="box-shadow: var(--shadow-dropdown)">
-              <div class="px-3 py-2 border-b text-[10px] font-bold uppercase tracking-wider text-slate-500"
-                :class="isDark ? 'border-slate-700' : 'border-slate-100'">Switch User</div>
-              <div class="py-1">
-                <button v-for="username in currentUsers" :key="username"
-                  @click="handleSwitchUser(username)"
-                  class="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs transition-colors text-left"
-                  :class="isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <div class="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[9px] font-bold"
-                      :class="username === activeUser ? 'bg-cyan-500 text-white' : (isDark ? 'bg-slate-600 text-slate-300' : 'bg-slate-200 text-slate-600')">
-                      {{ username.charAt(0).toUpperCase() }}
+            <!-- Dropdown — fixed positioning agar tidak terpotong card -->
+            <Teleport to="body">
+              <div v-if="showUserDropdown"
+                class="user-switcher-dropdown rounded-xl border shadow-xl"
+                :class="isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'"
+                :style="dropdownStyle">
+                <div class="px-3 py-2 border-b text-[10px] font-bold uppercase tracking-wider text-slate-500"
+                  :class="isDark ? 'border-slate-700' : 'border-slate-100'">Switch User</div>
+                <div class="py-1">
+                  <button v-for="username in currentUsers" :key="username"
+                    @click="handleSwitchUser(username)"
+                    class="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-xs transition-colors text-left"
+                    :class="isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-50'">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <div class="w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[9px] font-bold"
+                        :class="username === activeUser ? 'bg-cyan-500 text-white' : (isDark ? 'bg-slate-600 text-slate-300' : 'bg-slate-200 text-slate-600')">
+                        {{ username.charAt(0).toUpperCase() }}
+                      </div>
+                      <span class="truncate font-medium" :class="isDark ? 'text-slate-200' : 'text-slate-700'">{{ username }}</span>
                     </div>
-                    <span class="truncate font-medium" :class="isDark ? 'text-slate-200' : 'text-slate-700'">{{ username }}</span>
-                  </div>
-                  <Check v-if="username === activeUser" class="w-3 h-3 text-cyan-500 shrink-0" />
-                  <button v-else @click.stop="handleRemoveUser(username)"
-                    class="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-500"
-                    title="Remove user">
-                    <LogOut class="w-3 h-3" />
+                    <Check v-if="username === activeUser" class="w-3 h-3 text-cyan-500 shrink-0" />
+                    <button v-else @click.stop="handleRemoveUser(username)"
+                      class="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-red-500"
+                      title="Remove user">
+                      <LogOut class="w-3 h-3" />
+                    </button>
                   </button>
-                </button>
+                </div>
+                <div class="border-t" :class="isDark ? 'border-slate-700' : 'border-slate-100'">
+                  <button @click="showAddUserModal = true; showUserDropdown = false"
+                    class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition-colors"
+                    :class="isDark ? 'text-brand-400 hover:bg-slate-700' : 'text-brand-600 hover:bg-slate-50'">
+                    <Plus class="w-3 h-3" /> Add Another User
+                  </button>
+                </div>
               </div>
-              <div class="border-t" :class="isDark ? 'border-slate-700' : 'border-slate-100'">
-                <button @click="showAddUserModal = true; showUserDropdown = false"
-                  class="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold transition-colors"
-                  :class="isDark ? 'text-brand-400 hover:bg-slate-700' : 'text-brand-600 hover:bg-slate-50'">
-                  <Plus class="w-3 h-3" /> Add Another User
-                </button>
-              </div>
-            </div>
+            </Teleport>
           </div>
 
           <!-- Terminal button -->

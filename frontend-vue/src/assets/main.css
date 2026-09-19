@@ -17,6 +17,11 @@
   --color-brand-600: #0891b2;
   --color-brand-700: #0e7490;
 
+  /* Font families */
+  --font-sans:    'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-serif:   'Newsreader', ui-serif, Georgia, serif;
+  --font-mono:    'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;
+
   /* Terminal color palette */
   --color-terminal-bg:      #0d1117;
   --color-terminal-surface: #161b22;
@@ -48,16 +53,30 @@
    BASE
    ═══════════════════════════════════════════════════════════ */
 
-/* ─── Reset background agar bg.jpg dari App.vue bisa tembus ─── */
 html, body {
   background: transparent !important;
 }
 
 body {
-  font-family: 'Geist Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.6;
+  font-feature-settings: 'liga' 1, 'calt' 1;
   @apply text-slate-900 dark:text-slate-50;
+}
+
+/* Heading — Newsreader serif */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Newsreader', ui-serif, Georgia, serif;
+  font-feature-settings: 'liga' 1, 'onum' 1;
+}
+
+/* Monospace — IBM Plex Mono untuk code, terminal, nilai numerik */
+code, pre, kbd, samp,
+.font-mono,
+[class*="font-mono"] {
+  font-family: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;
+  font-feature-settings: 'liga' 0, 'calt' 1;
 }
 
 /* ─── Card ─────────────────────────────────────────────────── */
@@ -80,7 +99,9 @@ body {
   @apply border-slate-300 dark:border-slate-600;
 }
 
+/* card-title pakai IBM Plex Sans (UI label), bukan Newsreader */
 .card-title {
+  font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
   @apply text-base font-semibold text-slate-800 mb-4 flex items-center gap-2
          tracking-tight
          dark:text-slate-100;
@@ -259,7 +280,6 @@ body {
   to   { opacity: 1; }
 }
 
-/* Single element entrance */
 .animate-fade-slide-up {
   animation: fade-slide-up 0.3s ease forwards;
 }
@@ -268,14 +288,12 @@ body {
   animation: fade-in 0.25s ease forwards;
 }
 
-/* Staggered list items — set style="--i: N" on each item */
 .stagger-item {
   opacity: 0;
   animation: fade-slide-up 0.25s ease forwards;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 
-/* View transition (used with Vue <Transition>) */
 .view-enter-active {
   animation: fade-slide-up 0.25s ease forwards;
 }
