@@ -19,7 +19,7 @@ const {
   addServer, removeServer, setToken, setActiveServer,
   addLabel, removeLabel, renameLabel,
   assignServerToLabel, reorderServersInLabel, reorderLabels,
-  ungroupedServers,
+  ungroupedServers, isConfigLoaded,
 } = useServerStore()
 const { isDark } = useThemeStore()
 const { showToast, showConfirm } = useToastStore()
@@ -62,12 +62,33 @@ const checkPing = async (server) => {
 }
 
 let intervals = []
-onMounted(() => {
-  servers.value.forEach(s => {
+
+// Setup ping interval untuk semua server yang ada
+const setupPingIntervals = (serverList) => {
+  // Bersihkan interval lama dulu
+  intervals.forEach(clearInterval)
+  intervals = []
+  serverList.forEach(s => {
     pingState.value[s.id] = { ms: null, online: null }
     checkPing(s)
     intervals.push(setInterval(() => checkPing(s), PING_INTERVAL_MS))
   })
+}
+
+onMounted(() => {
+  if (isConfigLoaded.value) {
+    // Config sudah loaded (misal: kembali ke halaman setelah login)
+    setupPingIntervals(servers.value)
+  } else {
+    // Config belum loaded — tunggu sampai loadConfigFromServer selesai
+    // baru setup ping dengan data yang benar dari SQLite
+    const stop = watch(isConfigLoaded, (loaded) => {
+      if (loaded) {
+        setupPingIntervals(servers.value)
+        stop() // unwatch setelah sekali jalan
+      }
+    }, { immediate: false })
+  }
 })
 onUnmounted(() => { intervals.forEach(clearInterval); intervals = [] })
 

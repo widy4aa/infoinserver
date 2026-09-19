@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import { useStorage } from '@vueuse/core'
 
 // ── State Global ──────────────────────────────────────────────────────────────
@@ -50,9 +50,35 @@ let _githubToken = null          // di-set dari luar via setGithubToken()
 let _syncEnabled = false         // aktif setelah loadConfigFromServer() selesai
 let _isSyncing   = false         // cegah watch loop saat load
 let _canWrite    = true          // false untuk slave
+let _loadToken   = 0             // cancel concurrent loadConfigFromServer calls
+
+// Exposed ke komponen agar bisa watch kapan config sudah loaded
+const isConfigLoaded = ref(false)
 
 // Dipanggil dari App.vue saat user login GitHub
 const setGithubToken = (token) => { _githubToken = token }
+
+// Flush langsung ke SQLite tanpa debounce — dipanggil sebelum load dari server
+// untuk memastikan perubahan lokal yang belum tersimpan tidak tertimpa
+const _flushConfig = async () => {
+  if (!_githubToken || !_syncEnabled || _isSyncing || !_canWrite) return
+  try {
+    await fetch('/api/frontend/config', {
+      method: 'PUT',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${_githubToken}`
+      },
+      body: JSON.stringify({
+        servers:          servers.value,
+        labels:           labels.value,
+        active_server_id: activeServerId.value,
+      })
+    })
+  } catch (e) {
+    console.warn('[config] Failed to flush config before reload:', e)
+  }
+}
 
 // GET config dari Bun SQLite → replace localStorage
 // config sekarang GLOBAL (selalu config admin default)
@@ -60,11 +86,26 @@ const loadConfigFromServer = async (token, canWrite = true) => {
   if (!token) return
   _githubToken = token
   _canWrite    = canWrite
+
+  // Tandai load ini dengan token unik — jika ada load lain yang lebih baru,
+  // load ini akan diabaikan saat data kembali (cegah race condition concurrent calls)
+  const myToken = ++_loadToken
+
+  // Flush perubahan lokal yang mungkin belum tersimpan ke SQLite
+  // sebelum kita fetch dari sana — mencegah data stale menimpa perubahan baru
+  if (_syncEnabled && _canWrite) await _flushConfig()
+
+  // Jika saat flush sedang berjalan ada load baru yang dipanggil, batalkan ini
+  if (myToken !== _loadToken) return
+
   try {
     const res = await fetch('/api/frontend/config', {
       headers: { Authorization: `Bearer ${token}` }
     })
     if (!res.ok) return
+
+    // Cek lagi setelah await — load lain mungkin sudah dimulai
+    if (myToken !== _loadToken) return
 
     const data = await res.json()
 
@@ -72,6 +113,7 @@ const loadConfigFromServer = async (token, canWrite = true) => {
     // Jika user bisa write (admin/master), push config lokal saat ini ke server
     if (!data.exists) {
       _syncEnabled = true
+      isConfigLoaded.value = true
       if (_canWrite) saveConfigToServer()
       return
     }
@@ -81,14 +123,22 @@ const loadConfigFromServer = async (token, canWrite = true) => {
     servers.value          = data.servers          ?? []
     labels.value           = data.labels           ?? []
     activeServerId.value   = data.active_server_id ?? servers.value[0]?.id ?? ''
-    setTimeout(() => {
-      _isSyncing   = false
-      _syncEnabled = true
-    }, 100)
+
+    // Tunggu Vue selesai proses semua reactive update dari assignment di atas
+    // sebelum mengaktifkan sync — lebih presisi dari setTimeout(100)
+    await nextTick()
+    await nextTick() // dua nextTick untuk memastikan watcher microtask sudah selesai
+
+    if (myToken !== _loadToken) return // cek sekali lagi setelah await
+
+    _isSyncing   = false
+    _syncEnabled = true
+    isConfigLoaded.value = true
 
   } catch (e) {
     console.warn('[config] Failed to load from server, using localStorage:', e)
     _syncEnabled = true
+    isConfigLoaded.value = true
   }
 }
 
@@ -337,5 +387,6 @@ export const useServerStore = () => {
     // Config sync
     loadConfigFromServer,
     setGithubToken,
+    isConfigLoaded,
   }
 }

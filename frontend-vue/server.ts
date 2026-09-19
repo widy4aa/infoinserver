@@ -106,6 +106,22 @@ db.run(`
   )
 `)
 
+// Error log dari client (browser) — HTTP errors, JSON parse errors, dll
+// Berguna untuk debugging tanpa harus buka DevTools
+db.run(`
+  CREATE TABLE IF NOT EXISTS client_errors (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp  TEXT NOT NULL DEFAULT (datetime('now')),
+    server_id  TEXT,           -- serverId aktif saat error terjadi
+    server_name TEXT,          -- nama server (untuk display)
+    method     TEXT,           -- GET / POST / PUT / DELETE
+    path       TEXT NOT NULL,  -- URL path yang gagal (/api/proxy/xxx/api/...)
+    status     INTEGER,        -- HTTP status code (500, 503, 404, dll)
+    message    TEXT,           -- pesan error dari response body
+    level      TEXT NOT NULL DEFAULT 'ERROR'  -- ERROR | WARN
+  )
+`)
+
 // Bootstrap: pastikan admin default selalu ada
 db.run(`
   INSERT INTO user_roles (github_username, role)
@@ -625,7 +641,85 @@ app.put('/api/frontend/config', async (c) => {
   return c.json({ ok: true })
 })
 
-// ── 11. Proxy: POST /api/proxy/connect — login ke server target lewat Bun ─────
+// ── 11. Client Error Log: POST /api/client-errors — terima error dari browser ─
+// Browser kirim error batch setiap kali apiFetch dapat response >= 400.
+// Tidak butuh auth Linux, cukup GitHub session (agar tidak bisa diisi sembarang).
+app.post('/api/client-errors', async (c) => {
+  const username = await verifySession(c.req.header('Authorization'))
+  if (!username) return c.json({ error: 'Unauthorized' }, 401)
+
+  let body: { errors?: Array<{
+    server_id?: string; server_name?: string; method?: string;
+    path?: string; status?: number; message?: string; level?: string
+  }> }
+  try { body = await c.req.json() } catch { return c.json({ error: 'Invalid JSON' }, 400) }
+
+  const errors = body.errors ?? []
+  if (!Array.isArray(errors) || errors.length === 0) return c.json({ ok: true, inserted: 0 })
+
+  // Batasi max 50 error per request agar tidak bisa di-abuse
+  const batch = errors.slice(0, 50)
+  const now = new Date().toISOString()
+
+  const stmt = db.prepare(`
+    INSERT INTO client_errors (timestamp, server_id, server_name, method, path, status, message, level)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+
+  for (const e of batch) {
+    stmt.run(
+      now,
+      e.server_id   ?? null,
+      e.server_name ?? null,
+      e.method      ?? null,
+      e.path        ?? '(unknown)',
+      e.status      ?? null,
+      e.message     ?? null,
+      e.level       ?? 'ERROR'
+    )
+  }
+
+  return c.json({ ok: true, inserted: batch.length })
+})
+
+// ── 12. Client Error Log: GET /api/client-errors — ambil 300 error terbaru ────
+app.get('/api/client-errors', async (c) => {
+  const username = await verifySession(c.req.header('Authorization'))
+  if (!username) return c.json({ error: 'Unauthorized' }, 401)
+
+  const serverId = c.req.query('server_id')  // optional filter by server
+  const level    = c.req.query('level')      // optional filter by level
+
+  let query = `SELECT id, timestamp, server_id, server_name, method, path, status, message, level
+               FROM client_errors`
+  const params: (string | number)[] = []
+  const conditions: string[] = []
+
+  if (serverId) { conditions.push('server_id = ?'); params.push(serverId) }
+  if (level)    { conditions.push('level = ?');     params.push(level.toUpperCase()) }
+
+  if (conditions.length > 0) query += ' WHERE ' + conditions.join(' AND ')
+  query += ' ORDER BY id DESC LIMIT 300'
+
+  const rows = db.query(query).all(...params) as Array<{
+    id: number; timestamp: string; server_id: string | null; server_name: string | null;
+    method: string | null; path: string; status: number | null; message: string | null; level: string
+  }>
+
+  return c.json(rows)
+})
+
+// ── 13. Client Error Log: DELETE /api/client-errors — hapus semua (admin only) ─
+app.delete('/api/client-errors', async (c) => {
+  const username = await verifySession(c.req.header('Authorization'))
+  if (!username) return c.json({ error: 'Unauthorized' }, 401)
+  if (getUserRole(username) !== 'admin') return c.json({ error: 'Forbidden' }, 403)
+
+  db.run('DELETE FROM client_errors')
+  return c.json({ ok: true })
+})
+
+// ── 14. Proxy: POST /api/proxy/connect — login ke server target lewat Bun ─────
 // Browser tidak pernah tahu URL asli server lab — Bun yang fetch.
 // Body: { serverId, targetUrl, username, password }
 // Response: { token, username } — sama seperti Rust /api/auth/login
@@ -673,7 +767,7 @@ app.post('/api/proxy/connect', async (c) => {
   return c.json(data, rustRes.status)
 })
 
-// ── 12. Proxy: /api/proxy/:serverId/* — relay HTTP ke server target ───────────
+// ── 15. Proxy: /api/proxy/:serverId/* — relay HTTP ke server target ───────────
 // Semua request dari browser ke /api/proxy/{id}/api/... di-forward ke URL asli.
 app.all('/api/proxy/:serverId/*', async (c) => {
   const serverId = c.req.param('serverId')
@@ -704,7 +798,7 @@ app.all('/api/proxy/:serverId/*', async (c) => {
   }
 })
 
-// ── 13. HTTP Proxy: semua /api/* non-WS ke Rust backend ───────────────────────
+// ── 16. HTTP Proxy: semua /api/* non-WS ke Rust backend ───────────────────────
 app.all('/api/*', async (c) => {
   const url = RUST_BACKEND_URL + c.req.path + (c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : '')
 

@@ -1,18 +1,22 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { useApi } from '../composables/useApi'
+import { useApi, safeJson } from '../composables/useApi'
 import { useServerStore } from '../stores/serverStore'
 import { useToastStore } from '../stores/toastStore'
 import { useThemeStore } from '../stores/themeStore'
-import { FileText, Loader2, Pause, Play, RefreshCw, Activity, Terminal } from 'lucide-vue-next'
+import { useErrorLogStore } from '../stores/errorLogStore'
+import { useAuthStore } from '../stores/authStore'
+import { FileText, Loader2, Pause, Play, RefreshCw, Activity, Terminal, AlertTriangle, Trash2 } from 'lucide-vue-next'
 
 const { apiFetch } = useApi()
-const { getActiveServerUrl } = useServerStore()
-const { showToast } = useToastStore()
+const { getActiveServerUrl, servers, activeServerId } = useServerStore()
+const { showToast, showConfirm } = useToastStore()
 const { isDark } = useThemeStore()
+const { errors: inMemoryErrors, clearErrors } = useErrorLogStore()
+const { getToken: getGithubToken, isAdmin } = useAuthStore()
 
 // ── TABS STATE ──
-const activeTab = ref('journal') // 'journal', 'activity', 'bash'
+const activeTab = ref('journal') // 'journal', 'activity', 'client-errors', 'bash'
 
 // ── SYSTEM JOURNAL STATE ──
 const rawLogs = ref([])
@@ -41,8 +45,7 @@ const fetchSyslogs = async () => {
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/syslogs?filter=all`)
     if (res.ok) {
-      const data = await res.json()
-      // Split the single string block into an array of lines, remove empty lines
+      const data = await safeJson(res)
       rawLogs.value = (data.logs || '').split('\n').filter(l => l.trim() !== '')
       scrollToBottom(logContainer.value)
     } else {
@@ -66,13 +69,90 @@ const fetchActivityLogs = async () => {
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/logs/activity`)
     if (res.ok) {
-      activityLogs.value = await res.json()
+      activityLogs.value = await safeJson(res)
     }
   } catch (e) {
     console.error(e)
   } finally {
     isLoadingActivity.value = false
   }
+}
+
+// ── CLIENT ERRORS STATE ──
+// Dua sumber: in-memory (real-time dari store) + SQLite dari Bun (persisten)
+const persistedErrors = ref([])       // dari Bun SQLite (lintas sesi)
+const isLoadingClientErrors = ref(false)
+const clientErrorFilter = ref('ALL')  // ALL | ERROR | WARN
+const clientErrorServerFilter = ref('ALL') // ALL | serverId
+
+// Gabungkan in-memory + persisted, deduplikasi by (timestamp+path+status), sorted terbaru dulu
+const allClientErrors = computed(() => {
+  // Persisted sudah sorted DESC dari server
+  // In-memory juga unshift jadi terbaru dulu
+  // Merge: in-memory dulu (lebih fresh), lalu persisted yang tidak ada di in-memory
+  const inMemIds = new Set(inMemoryErrors.value.map(e => `${e.timestamp}|${e.path}|${e.status}`))
+  const uniquePersisted = persistedErrors.value.filter(
+    e => !inMemIds.has(`${e.timestamp}|${e.path}|${e.status}`)
+  )
+  return [...inMemoryErrors.value, ...uniquePersisted]
+})
+
+const filteredClientErrors = computed(() => {
+  return allClientErrors.value.filter(e => {
+    if (clientErrorFilter.value !== 'ALL' && e.level !== clientErrorFilter.value) return false
+    if (clientErrorServerFilter.value !== 'ALL' && e.server_id !== clientErrorServerFilter.value) return false
+    return true
+  })
+})
+
+// Daftar server unik yang punya error (untuk filter dropdown)
+const errorServerOptions = computed(() => {
+  const seen = new Map()
+  for (const e of allClientErrors.value) {
+    if (e.server_id && !seen.has(e.server_id)) {
+      seen.set(e.server_id, e.server_name ?? e.server_id)
+    }
+  }
+  return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
+})
+
+const fetchClientErrors = async () => {
+  if (activeTab.value !== 'client-errors') return
+  isLoadingClientErrors.value = true
+  try {
+    const token = getGithubToken()
+    const res = await fetch('/api/client-errors', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (res.ok) {
+      persistedErrors.value = await res.json()
+    }
+  } catch (e) {
+    console.error(e)
+  } finally {
+    isLoadingClientErrors.value = false
+  }
+}
+
+const clearAllClientErrors = () => {
+  showConfirm(
+    'Clear Error Log',
+    'Hapus semua client error log? Tidak bisa dibatalkan.',
+    async () => {
+      try {
+        const token = getGithubToken()
+        await fetch('/api/client-errors', {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        persistedErrors.value = []
+        clearErrors()
+        showToast('Success', 'Error log cleared', 'success')
+      } catch (e) {
+        showToast('Error', e.message, 'error')
+      }
+    }
+  )
 }
 
 // ── BASH HISTORY STATE ──
@@ -86,7 +166,7 @@ const fetchBashHistory = async () => {
   try {
     const res = await apiFetch(`${getActiveServerUrl()}/api/logs/bash_history`)
     if (res.ok) {
-      bashHistory.value = await res.json()
+      bashHistory.value = await safeJson(res)
       scrollToBottom(bashContainer.value)
     }
   } catch (e) {
@@ -121,6 +201,7 @@ const changeTab = (tab) => {
   activeTab.value = tab
   if (tab === 'journal') fetchSyslogs()
   else if (tab === 'activity') fetchActivityLogs()
+  else if (tab === 'client-errors') fetchClientErrors()
   else if (tab === 'bash') fetchBashHistory()
 }
 
@@ -140,26 +221,64 @@ onUnmounted(() => {
 const getLevelColor = (level) => {
   switch(level?.toUpperCase()) {
     case 'CRITICAL': return 'bg-red-500/20 text-red-500 border border-red-500/50'
-    case 'WARNING': return 'bg-amber-500/20 text-amber-500 border border-amber-500/50'
-    case 'INFO': return 'bg-brand-500/20 text-brand-500 border border-brand-500/50'
-    default: return 'bg-slate-500/20 text-slate-500 border border-slate-500/50'
+    case 'WARNING':  return 'bg-amber-500/20 text-amber-500 border border-amber-500/50'
+    case 'INFO':     return 'bg-brand-500/20 text-brand-500 border border-brand-500/50'
+    default:         return 'bg-slate-500/20 text-slate-500 border border-slate-500/50'
   }
+}
+
+const getStatusColor = (status) => {
+  if (!status) return 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+  if (status >= 500) return 'bg-red-500/20 text-red-400 border border-red-500/40'
+  if (status >= 400) return 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+  return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+}
+
+const getErrorLevelColor = (level) => {
+  if (level === 'ERROR') return 'bg-red-500/20 text-red-400 border border-red-500/40'
+  if (level === 'WARN')  return 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+  return 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+}
+
+// Bersihkan path dari prefix proxy agar lebih mudah dibaca
+// /api/proxy/1789xxx/api/container/runtime/refresh → [Server: xxx] /api/container/runtime/refresh
+const formatPath = (path, serverName) => {
+  const match = path?.match(/^\/api\/proxy\/[^/]+(\/.+)$/)
+  if (match) return match[1]
+  return path ?? '(unknown)'
+}
+
+const formatTimestamp = (ts) => {
+  if (!ts) return '-'
+  try { return new Date(ts).toLocaleString() } catch { return ts }
 }
 </script>
 
 <template>
   <div class="space-y-4">
     <!-- Tabs Header -->
-    <div class="flex items-center gap-2 border-b" :class="isDark ? 'border-slate-800' : 'border-slate-200'">
-      <button @click="changeTab('journal')" class="px-4 py-2 text-sm font-semibold transition-colors border-b-2"
+    <div class="flex items-center gap-1 border-b overflow-x-auto" :class="isDark ? 'border-slate-800' : 'border-slate-200'">
+      <button @click="changeTab('journal')" class="px-4 py-2 text-sm font-semibold transition-colors border-b-2 whitespace-nowrap"
         :class="activeTab === 'journal' ? 'border-brand-500 text-brand-500' : 'border-transparent text-slate-500 hover:text-slate-700'">
         <div class="flex items-center gap-2"><FileText class="w-4 h-4"/> System Journal</div>
       </button>
-      <button @click="changeTab('activity')" class="px-4 py-2 text-sm font-semibold transition-colors border-b-2"
+      <button @click="changeTab('activity')" class="px-4 py-2 text-sm font-semibold transition-colors border-b-2 whitespace-nowrap"
         :class="activeTab === 'activity' ? 'border-brand-500 text-brand-500' : 'border-transparent text-slate-500 hover:text-slate-700'">
         <div class="flex items-center gap-2"><Activity class="w-4 h-4"/> Dashboard Activity</div>
       </button>
-      <button @click="changeTab('bash')" class="px-4 py-2 text-sm font-semibold transition-colors border-b-2"
+      <button @click="changeTab('client-errors')" class="px-4 py-2 text-sm font-semibold transition-colors border-b-2 whitespace-nowrap relative"
+        :class="activeTab === 'client-errors' ? 'border-red-500 text-red-500' : 'border-transparent text-slate-500 hover:text-slate-700'">
+        <div class="flex items-center gap-2">
+          <AlertTriangle class="w-4 h-4"/>
+          Client Errors
+          <!-- Badge jumlah error real-time -->
+          <span v-if="inMemoryErrors.length > 0"
+            class="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-red-500 text-white leading-none">
+            {{ inMemoryErrors.length > 99 ? '99+' : inMemoryErrors.length }}
+          </span>
+        </div>
+      </button>
+      <button @click="changeTab('bash')" class="px-4 py-2 text-sm font-semibold transition-colors border-b-2 whitespace-nowrap"
         :class="activeTab === 'bash' ? 'border-brand-500 text-brand-500' : 'border-transparent text-slate-500 hover:text-slate-700'">
         <div class="flex items-center gap-2"><Terminal class="w-4 h-4"/> Bash History</div>
       </button>
@@ -278,7 +397,147 @@ const getLevelColor = (level) => {
       </div>
     </section>
 
-    <!-- TAB 3: BASH HISTORY -->
+    <!-- TAB 3: CLIENT ERRORS -->
+    <section v-if="activeTab === 'client-errors'" class="card p-0 overflow-hidden">
+      <!-- Header + Filters -->
+      <div class="flex flex-col gap-3 px-4 py-3 border-b" :class="isDark ? 'border-slate-800 bg-slate-800/50' : 'border-slate-200 bg-slate-50'">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-sm font-bold" :class="isDark ? 'text-slate-100' : 'text-slate-800'">Client Error Log</h2>
+            <p class="text-[11px] mt-0.5" :class="isDark ? 'text-slate-500' : 'text-slate-500'">
+              Error HTTP yang tertangkap browser saat mengakses API server.
+              Berguna untuk debug tanpa buka DevTools.
+            </p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button @click="fetchClientErrors" class="btn-secondary text-xs h-8 px-3" :disabled="isLoadingClientErrors">
+              <RefreshCw :class="{'animate-spin': isLoadingClientErrors}" class="w-3.5 h-3.5" />
+            </button>
+            <button v-if="isAdmin" @click="clearAllClientErrors"
+              class="flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg text-red-500 border border-red-500/30 hover:bg-red-500/10 transition-colors">
+              <Trash2 class="w-3.5 h-3.5" /> Clear All
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter bar -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Level filter -->
+          <div class="flex items-center gap-1">
+            <span class="text-xs text-slate-500">Level:</span>
+            <button v-for="lv in ['ALL', 'ERROR', 'WARN']" :key="lv"
+              @click="clientErrorFilter = lv"
+              class="px-2 py-0.5 text-[11px] font-semibold rounded transition-colors"
+              :class="clientErrorFilter === lv
+                ? (lv === 'ERROR' ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                  : lv === 'WARN' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                  : 'bg-brand-500/20 text-brand-500 border border-brand-500/40')
+                : (isDark ? 'text-slate-400 hover:text-slate-200 border border-transparent' : 'text-slate-500 hover:text-slate-700 border border-transparent')">
+              {{ lv }}
+            </button>
+          </div>
+
+          <!-- Server filter -->
+          <div v-if="errorServerOptions.length > 1" class="flex items-center gap-1">
+            <span class="text-xs text-slate-500">Server:</span>
+            <select v-model="clientErrorServerFilter"
+              class="text-[11px] rounded px-2 py-0.5 border outline-none"
+              :class="isDark ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-700'">
+              <option value="ALL">All</option>
+              <option v-for="s in errorServerOptions" :key="s.id" :value="s.id">
+                {{ s.name }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Stats -->
+          <div class="ml-auto text-[11px]" :class="isDark ? 'text-slate-500' : 'text-slate-400'">
+            {{ filteredClientErrors.length }} entries
+            <span v-if="inMemoryErrors.length > 0" class="ml-2 text-red-400">
+              ({{ inMemoryErrors.length }} baru sejak buka tab)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error Table -->
+      <div class="overflow-x-auto max-h-[70vh] overflow-y-auto">
+        <table class="w-full">
+          <thead class="border-b sticky top-0 z-10" :class="isDark ? 'bg-slate-800/95 border-slate-700' : 'bg-slate-100 border-slate-200'">
+            <tr>
+              <th class="table-th text-xs whitespace-nowrap">Waktu</th>
+              <th class="table-th text-xs">Level</th>
+              <th class="table-th text-xs">Status</th>
+              <th class="table-th text-xs">Server</th>
+              <th class="table-th text-xs">Method</th>
+              <th class="table-th text-xs">API Path</th>
+              <th class="table-th text-xs">Pesan Error</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y" :class="isDark ? 'divide-slate-800/50' : 'divide-slate-100'">
+            <tr v-for="err in filteredClientErrors" :key="err.id"
+              class="text-xs group"
+              :class="[
+                isDark ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50',
+                err.level === 'ERROR' ? (isDark ? 'border-l-2 border-red-500/30' : 'border-l-2 border-red-400/30') : ''
+              ]">
+              <td class="table-td whitespace-nowrap text-slate-500 font-mono text-[10px]">
+                {{ formatTimestamp(err.timestamp) }}
+              </td>
+              <td class="table-td whitespace-nowrap">
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase" :class="getErrorLevelColor(err.level)">
+                  {{ err.level }}
+                </span>
+              </td>
+              <td class="table-td whitespace-nowrap">
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold" :class="getStatusColor(err.status)">
+                  {{ err.status ?? '—' }}
+                </span>
+              </td>
+              <td class="table-td max-w-[120px]">
+                <span class="truncate block" :title="err.server_name ?? err.server_id ?? '-'"
+                  :class="isDark ? 'text-slate-300' : 'text-slate-700'">
+                  {{ err.server_name ?? err.server_id ?? '—' }}
+                </span>
+              </td>
+              <td class="table-td whitespace-nowrap">
+                <span class="font-mono font-bold text-[10px]"
+                  :class="isDark ? 'text-cyan-400' : 'text-cyan-600'">
+                  {{ err.method ?? 'GET' }}
+                </span>
+              </td>
+              <td class="table-td max-w-[240px]">
+                <span class="font-mono text-[10px] break-all"
+                  :class="isDark ? 'text-slate-300' : 'text-slate-600'"
+                  :title="err.path">
+                  {{ formatPath(err.path, err.server_name) }}
+                </span>
+              </td>
+              <td class="table-td max-w-[300px]">
+                <span class="text-[10px] break-all line-clamp-2"
+                  :class="err.level === 'ERROR'
+                    ? (isDark ? 'text-red-300' : 'text-red-600')
+                    : (isDark ? 'text-amber-300' : 'text-amber-600')"
+                  :title="err.message">
+                  {{ err.message ?? '—' }}
+                </span>
+              </td>
+            </tr>
+            <tr v-if="filteredClientErrors.length === 0">
+              <td colspan="7" class="text-center p-10 text-slate-500 italic text-sm">
+                <div class="flex flex-col items-center gap-2">
+                  <AlertTriangle class="w-6 h-6 text-slate-400" />
+                  <span v-if="isLoadingClientErrors">Loading error log...</span>
+                  <span v-else>Tidak ada error yang tercatat. Bagus!</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- TAB 4: BASH HISTORY -->
     <section v-if="activeTab === 'bash'" class="card h-[80vh] flex flex-col p-0 overflow-hidden">
       <div class="flex items-center justify-between px-4 py-3 border-b shrink-0" :class="isDark ? 'border-slate-800 bg-slate-800/50' : 'border-slate-200 bg-slate-50'">
         <div>

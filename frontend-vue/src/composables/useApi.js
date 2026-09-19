@@ -2,10 +2,12 @@
 // Wrapper fetch yang otomatis inject Authorization: Bearer token per server
 // Menggunakan getActiveToken() untuk mendukung multi-user session
 // Auto-refresh token proaktif jika token akan expire dalam 5 menit
+// Error >= 400 dicatat ke errorLogStore (in-memory) dan dikirim ke Bun SQLite
 
 import { useServerStore } from '../stores/serverStore'
 import { useRouter } from 'vue-router'
 import { useToastStore } from '../stores/toastStore'
+import { useErrorLogStore } from '../stores/errorLogStore'
 
 // ── Token expiry helpers ──────────────────────────────────────────────────────
 
@@ -89,9 +91,10 @@ const refreshToken = async (serverUrl, currentToken) => {
 // ── Main composable ───────────────────────────────────────────────────────────
 
 export const useApi = () => {
-  const { getActiveToken, getActiveServerUrl, activeServerId, removeUser, getActiveUsername, listServerUsers, setToken } = useServerStore()
+  const { getActiveToken, getActiveServerUrl, activeServerId, removeUser, getActiveUsername, listServerUsers, setToken, servers } = useServerStore()
   const router = useRouter()
   const toastStore = useToastStore()
+  const { pushError, sendErrors } = useErrorLogStore()
 
   const apiFetch = async (url, options = {}) => {
     const serverId = activeServerId.value
@@ -118,6 +121,42 @@ export const useApi = () => {
     }
 
     let res = await fetch(url, { ...options, headers })
+
+    // ── Catat error HTTP >= 400 ke error log (kecuali 401 yang ditangani khusus) ──
+    // Ini yang membuat semua error seperti 500, 503, 404 terlihat di dashboard
+    // tanpa harus buka DevTools browser
+    if (res.status >= 400 && res.status !== 401) {
+      const clonedForLog = res.clone()
+      // Fire-and-forget — tidak block response
+      ;(async () => {
+        try {
+          const bodyText = await clonedForLog.text()
+          // Cari nama server aktif untuk display yang lebih informatif
+          const serverName = servers?.value?.find(s => s.id === serverId)?.name ?? null
+
+          // Ekstrak path dari URL (hapus origin jika ada)
+          let path = url
+          try { path = new URL(url, window.location.origin).pathname + (new URL(url, window.location.origin).search || '') } catch {}
+
+          const level = res.status >= 500 ? 'ERROR' : 'WARN'
+          const entry = {
+            server_id:   serverId,
+            server_name: serverName,
+            method:      options.method ?? 'GET',
+            path,
+            status:      res.status,
+            message:     bodyText.slice(0, 500), // cap 500 chars
+            level,
+          }
+
+          // 1. Simpan ke in-memory store (real-time di UI)
+          pushError(entry)
+
+          // 2. Kirim ke Bun SQLite (persisten, bisa dilihat setelah refresh)
+          sendErrors([entry])
+        } catch { /* silent */ }
+      })()
+    }
 
     // Cek jika status 401 secara resmi
     let isAuthFailed = res.status === 401
